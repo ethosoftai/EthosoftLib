@@ -27,3 +27,12 @@ jobs:
           python -m compileall -q src
           python -m pytest -q
           python -m build
+      - name: Upload pure Python wheel and sdist
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethosoftlib-python-package
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
