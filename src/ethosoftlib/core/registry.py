@@ -88,3 +88,9 @@ providers.register(
     "inference", "mercan", "ethosoftlib.mercan:MercanRuntime",
     description="MercanRuntime native inference via the stable C ABI",
 )
+
+# This tokenizer is a separate provider: native code is never loaded on discovery.
+providers.register(
+    "tokenizer", "nedo", "ethosoftlib.nedo:Tokenizer",
+    description="Original Rust NDSRF004 tokenizer, no LLM required",
+)
