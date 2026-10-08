@@ -78,3 +78,10 @@ Future Ethosoft projects must have their own subpackages, optional extras,
 public APIs, and independent tests. Prefer a stable integration boundary to
 imports from the Mercan provider. The `core` registry cannot gain inference-
 specific assumptions.
+
+## Independent NedoTokenizer
+
+`ethosoftlib.nedo` wraps the exact Rust NDSRF004 tokenizer via a standalone
+shared library. It has no Mercan model dependency. It is lazily registered
+as `tokenizer/nedo` in the generic provider registry. Because the native
+Rust library is optional, merely importing EthosoftLib loads no native code.
