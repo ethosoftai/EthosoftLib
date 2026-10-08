@@ -68,3 +68,16 @@ A fresh environment running the standard unit tests does not require native
 Mercan. The `Mercan native Linux model smoke` GitHub Actions workflow also
 builds `libmercan`, downloads the public `MercanAI/Mercan-0.8B-SFT` artifact,
 and runs a real 16-token chat when executed successfully.
+
+## Reuse original model-free NedoTokenizer
+
+```python
+from ethosoftlib.mercan import NedoTokenizer
+
+tokenizer = NedoTokenizer()  # Rust NDSRF004 bridge, no LLM required
+tokens = tokenizer.encode("Merhaba")
+print(tokenizer.decode(tokens))
+```
+
+The standalone Rust library must be built or installed separately; see
+[docs/NEDO_TOKENIZER.md](NEDO_TOKENIZER.md).
