@@ -34,5 +34,8 @@ Issues = "https://github.com/ethosoftai/EthosoftLib/issues"
 where = ["src"]
 include = ["ethosoftlib*"]
 
+[tool.setuptools.package-data]
+"ethosoftlib.mercan" = ["lib/*.so", "lib/*.dylib", "lib/*.dll"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
