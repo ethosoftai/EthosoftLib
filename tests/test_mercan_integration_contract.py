@@ -24,5 +24,6 @@ def test_real_mercan_model_chat():
             max_tokens=16, seed=42,
         )
         assert isinstance(response, str)
-        assert len(response) >= 0
+        print("Native model response:", repr(response), flush=True)
+        assert response.strip(), "The model returned an empty response"
         assert len(model.history) == 2
