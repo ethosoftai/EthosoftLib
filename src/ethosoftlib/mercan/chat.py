@@ -29,9 +29,7 @@ def format_chat(messages: Sequence[Mapping[str, str]]) -> str:
         content = message.get("content")
         if role not in ROLE_NAMES or not isinstance(content, str):
             raise ValueError("Messages must contain a known role and string content")
-        safe_content = content.replace("<|im_start|>", "<\\u200b|im_start|>").replace(
-            "<|im_end|>", "<\\u200b|im_end|>"
-        )
+        safe_content = content.replace("<|", "<​|")
         out.append(f"<|im_start|>{ROLE_NAMES[role]}\n{safe_content}<|im_end|>\n")
     out.append("<|im_start|>asistan\n")
     return "".join(out)

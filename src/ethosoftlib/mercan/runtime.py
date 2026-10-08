@@ -253,6 +253,20 @@ class MercanContext:
             raise native_error(self._model._runtime._lib, "Logits unavailable")
         return max(range(vocab_size), key=lambda index: logits[index])
 
+    def sample_token(self, *, temperature: float = 0.7,
+                     top_k: int = 40, top_p: float = 0.9,
+                     repeat_penalty: float = 1.15,
+                     recent_tokens: Sequence[int] = (), rng=None) -> int:
+        """Sample native logits before the next decode call."""
+        self._check()
+        from .sampling import sample_token
+        logits = self._model._runtime._lib.mercan_logits(self._handle)
+        if not logits:
+            raise native_error(self._model._runtime._lib, "Logits unavailable")
+        return sample_token(logits, self._model.vocab_size, temperature=temperature,
+                            top_k=top_k, top_p=top_p, repeat_penalty=repeat_penalty,
+                            recent_tokens=recent_tokens, rng=rng)
+
     def close(self) -> None:
         if self._handle:
             self._model._runtime._lib.mercan_context_free(self._handle)
