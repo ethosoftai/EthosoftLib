@@ -55,3 +55,25 @@ python -m build
 
 Python unit tests do not verify real model inference; native end-to-end tests
 require a built libmercan and a downloaded SFT model.
+
+## NedoTokenizer: model-free exact Rust tokenizer
+
+Use the same **NDSRF004** tokenizer as Mercan without loading an LLM:
+
+```python
+from ethosoftlib.nedo import Tokenizer
+
+tokenizer = Tokenizer()
+ids = tokenizer.encode("Merhaba, nasılsın?")
+print(ids)
+print(tokenizer.decode(ids))
+print(tokenizer.vocab_size, tokenizer.vocab_sha256)
+```
+
+The Python adapter is available as `ethosoftlib.nedo` or
+`ethosoftlib.mercan.NedoTokenizer`; the generic registry also offers
+`providers.create("tokenizer", "nedo")`. A Rust native tokenizer library
+is required at runtime. On Linux build a library with
+`bash scripts/build_nedo_native_linux.sh`; the script creates the exact
+Rust bridge, not an approximate Python reimplementation.
+See [NedoTokenizer guide](docs/NEDO_TOKENIZER.md).
