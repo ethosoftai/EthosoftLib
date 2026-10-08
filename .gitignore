@@ -12,3 +12,6 @@ venv/
 
 # Native payload only created for platform-specific builds.
 src/ethosoftlib/mercan/lib/
+
+# Staged standalone Rust NedoTokenizer library, only for native wheel builds.
+src/ethosoftlib/nedo/lib/
