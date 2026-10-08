@@ -2,7 +2,7 @@ name: Mercan native Linux model smoke
 on:
   workflow_dispatch:
   push:
-    branches: [feature/mercan-hf-chat-api]
+    branches: [main, feature/mercan-hf-chat-api]
     paths:
       - 'src/ethosoftlib/mercan/**'
       - 'scripts/build_mercan_native_linux.sh'
@@ -61,5 +61,27 @@ jobs:
           import glob
           wheels = glob.glob('dist/*.whl')
           assert wheels and all('none-any' not in w for w in wheels), wheels
-          print(wheels)
+          import zipfile
+          for wheel in wheels:
+              with zipfile.ZipFile(wheel) as archive:
+                  members = archive.namelist()
+                  assert any(x.endswith('/mercan/lib/libmercan.so') for x in members), members
+          print('Native shared library is present in the platform wheel:', wheels)
           PY
+      - name: Verify installed wheel with bundled native library
+        shell: bash
+        run: |
+          python -m venv /tmp/mercan-wheel-venv
+          /tmp/mercan-wheel-venv/bin/pip install --no-deps dist/*.whl
+          cd /tmp
+          env -u ETHOSOFT_MERCAN_LIBRARY -u MERCAN_LIBRARY_PATH /tmp/mercan-wheel-venv/bin/python - <<'PY'
+          from ethosoftlib.mercan import MercanRuntime
+          with MercanRuntime() as runtime:
+              print("Installed native wheel runtime version:", runtime.version)
+          PY
+      - name: Upload tested native Linux wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: ethosoftlib-linux-cpu-native-wheel
+          path: dist/*.whl
+          if-no-files-found: error
