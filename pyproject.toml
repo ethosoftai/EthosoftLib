@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ethosoftlib"
-version = "0.2.0"
+version = "0.3.0"
 description = "Extensible Python SDK for independent Ethosoft products and integrations"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,6 +36,7 @@ include = ["ethosoftlib*"]
 
 [tool.setuptools.package-data]
 "ethosoftlib.mercan" = ["lib/*.so", "lib/*.dylib", "lib/*.dll"]
+"ethosoftlib.nedo" = ["lib/*.so", "lib/*.dylib", "lib/*.dll"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
