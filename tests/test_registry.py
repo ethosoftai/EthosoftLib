@@ -5,9 +5,15 @@ from ethosoftlib.core.errors import ProviderError, ProviderNotFoundError, Provid
 
 
 def test_builtin_provider_is_lazy():
-    # Generic SDK import and discovery must not import Mercan native bindings.
-    assert providers.describe("inference", "mercan").name == "mercan"
-    assert "ethosoftlib.mercan.native" not in sys.modules
+    # Check in an isolated interpreter: other test modules may have imported
+    # the optional adapter during pytest collection before this test runs.
+    import subprocess
+    code = (
+        "import sys, ethosoftlib; "
+        "assert ethosoftlib.providers.describe('inference', 'mercan').name == 'mercan'; "
+        "assert 'ethosoftlib.mercan.native' not in sys.modules"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
 
 
 def test_categories_are_arbitrary():
