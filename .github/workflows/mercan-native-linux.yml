@@ -1,0 +1,65 @@
+name: Mercan native Linux model smoke
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/mercan-hf-chat-api]
+    paths:
+      - 'src/ethosoftlib/mercan/**'
+      - 'scripts/build_mercan_native_linux.sh'
+      - 'tests/test_mercan_integration_contract.py'
+      - '.github/workflows/mercan-native-linux.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  native-cpu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build git curl pkg-config
+          if ! command -v cargo >/dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          fi
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build shared Mercan CPU library
+        env:
+          MERCAN_JOBS: '2'
+        run: |
+          bash scripts/build_mercan_native_linux.sh
+          test -s src/ethosoftlib/mercan/lib/libmercan.so
+          ldd src/ethosoftlib/mercan/lib/libmercan.so
+      - name: Install SDK with Hub support
+        run: python -m pip install -e ".[hub,dev]"
+      - name: Download exact model artifact into HF cache
+        run: |
+          python - <<'PY'
+          from ethosoftlib.mercan.hub import resolve_model_file
+          from pathlib import Path
+          model = resolve_model_file("MercanAI/Mercan-0.8B-SFT")
+          assert model.stat().st_size > 100_000_000, model
+          Path("native_model_path.txt").write_text(str(model))
+          print(f"Artifact cached: {model.name} ({model.stat().st_size} bytes)")
+          PY
+      - name: Native end-to-end model chat
+        env:
+          ETHOSOFT_MERCAN_LIBRARY: ${{ github.workspace }}/src/ethosoftlib/mercan/lib/libmercan.so
+        run: |
+          export ETHOSOFT_MERCAN_TEST_MODEL="$(cat native_model_path.txt)"
+          python -m pytest -q tests/test_mercan_integration_contract.py
+      - name: Build platform-specific wheel
+        run: |
+          python -m build --wheel
+          python - <<'PY'
+          import glob
+          wheels = glob.glob('dist/*.whl')
+          assert wheels and all('none-any' not in w for w in wheels), wheels
+          print(wheels)
+          PY

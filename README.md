@@ -1,100 +1,57 @@
 # EthosoftLib
 
-**EthosoftLib is a multi-project, extensible Python SDK for Ethosoft technologies.**
+**EthosoftLib is a modular, multi-project Python SDK**, not a Mercan-only
+wrapper. Product modules stay independent and are registered lazily in the
+generic `ethosoftlib.core` registry. The root import never loads native engines.
 
-It is **not** a Mercan-only library. Integrations live in independent namespaces,
-with a general-purpose lazy provider registry in `ethosoftlib.core`. New services,
-education tools, data utilities, or native runtimes may be added without changing
-or depending on Mercan.
+## Mercan: high-level Python API
 
-## Status
-
-Early SDK foundation (0.1.0). No PyPI release has been published yet. This
-repository implements the shared SDK core and the first *optional* integration:
-a low-level MercanRuntime C ABI wrapper.
-
-## Install from source
+Install from GitHub with the optional Hugging Face extra (not yet on PyPI):
 
 ```bash
-git clone https://github.com/ethosoftai/EthosoftLib.git
-cd EthosoftLib
-python -m pip install -e .
+pip install 'ethosoftlib[hub] @ git+https://github.com/ethosoftai/EthosoftLib.git'
 ```
 
-Nothing native is downloaded or compiled by this package.
+The public Mercan model is distributed as `model.mercan` in
+`MercanAI/Mercan-0.8B-SFT`. The Hugging Face Hub downloader caches this file.
 
-## Discover any registered product
+```python
+from ethosoftlib.mercan import Model
+
+with Model.from_pretrained("MercanAI/Mercan-0.8B-SFT") as model:
+    answer = model.chat("Merhaba, nasılsın?", temperature=0.7, max_tokens=256)
+    print(answer)
+    print(model.chat("Bir önceki sorum neydi?"))
+```
+
+A **compatible libmercan shared library** is required to execute this code.
+On Linux, build and stage one using `bash scripts/build_mercan_native_linux.sh`,
+or set `ETHOSOFT_MERCAN_LIBRARY=/absolute/path/to/libmercan.so`.
+EthosoftLib does not automatically download or install executable native code.
+See [Mercan Python guide](docs/MERCAN_PYTHON.md) for step-by-step setup,
+CPU/CUDA options, ChatML, cache, native packaging and current limitations.
+
+## Provider-neutral SDK
 
 ```python
 from ethosoftlib import providers
 
-for item in providers.list():
-    print(item.category, item.name, item.description)
-
-# The generic SDK does not load libmercan on import or discovery.
-# Other projects can register in any domain:
+print(providers.list())   # metadata only; no integration dependencies loaded
 providers.register("storage", "example", "my_package:StorageClient")
-# The registered provider is imported only when explicitly created.
+# Inference and storage are unrelated categories.
 ```
 
-## MercanRuntime integration (optional)
+Add other integrations under their own namespaces:
+`ethosoftlib.education`, `ethosoftlib.data`, etc. See
+[architecture guidelines](docs/ARCHITECTURE.md).
 
-To use Mercan, first compile/install a **shared** native Mercan library from
-[MercanRuntime](https://github.com/Ahmet2001/MercanRuntime) using
-`MERCAN_BUILD_SHARED=ON`. Installing the Mercan CLI does not necessarily
-install `libmercan.so` for Python usage.
-
-```python
-from ethosoftlib.mercan import MercanRuntime
-
-with MercanRuntime(library_path="/absolute/path/to/libmercan.so") as runtime:
-    print(runtime.version)
-    with runtime.load_model("./model.mercan", gpu_layers=0) as model:
-        print(model.architecture, model.tokenizer, model.vocab_size)
-        print(model.tokenize("Merhaba"))
-        # Supply your model's own chat template; no template is assumed:
-        print(model.generate("Merhaba", max_new_tokens=32))
-```
-
-Alternatively set `ETHOSOFT_MERCAN_LIBRARY=/path/to/libmercan.so` and use
-`MercanRuntime()`. The adapter uses `ctypes` and the stable C API; it does
-not vendor Mercan's model classes, native tokenizer, or execution graph.
-`generate` is a basic greedy helper, not yet a high-level chat API.
-
-```python
-from ethosoftlib import providers
-
-runtime = providers.create(
-    "inference", "mercan", library_path="/absolute/path/to/libmercan.so"
-)
-try:
-    print(runtime.version)
-finally:
-    runtime.close()
-```
-
-## Project structure
-
-```text
-src/ethosoftlib/
-  core/          # Generic errors + lazy provider registry
-  mercan/        # Optional native runtime bridge (not a dependency of core)
-tests/           # Unit tests; no native runtime required for these
-docs/            # Design and extension guidelines
-```
-
-## Testing
+## Development
 
 ```bash
-python -m pip install -e ".[dev]"
+pip install -e '.[dev]'
 python -m pytest -q
 python -m build
 ```
 
-These checks validate SDK behavior, packaging and ctypes declarations.
-They do not replace native Mercan model/parity tests.
-
-## Extending EthosoftLib
-
-Each future integration should own its dependency boundary and module.
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Python unit tests do not verify real model inference; native end-to-end tests
+require a built libmercan and a downloaded SFT model.

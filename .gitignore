@@ -9,3 +9,6 @@ dist/
 .venv/
 venv/
 .env
+
+# Native payload only created for platform-specific builds.
+src/ethosoftlib/mercan/lib/

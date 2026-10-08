@@ -1,6 +1,6 @@
 """ctypes declarations corresponding to MercanRuntime runtime/libmercan/include/mercan.h.
 
-No vendored or bundled Mercan runtime is assumed. The ABI is loaded on demand.
+The ABI is loaded on demand. Platform-specific wheels may bundle libmercan.
 """
 from __future__ import annotations
 
@@ -38,19 +38,32 @@ class ContextParams(C.Structure):
 
 
 def load_library(path: str | os.PathLike[str] | None = None) -> C.CDLL:
-    """Find libmercan, without downloading executable code or native binaries."""
+    """Load explicit, package-bundled, then system native library."""
     explicit = path or os.environ.get("ETHOSOFT_MERCAN_LIBRARY") or os.environ.get("MERCAN_LIBRARY_PATH")
-    library = os.fspath(explicit) if explicit else find_library("mercan")
-    if not library:
+    if explicit:
+        candidates = [os.fspath(explicit)]
+    else:
+        folder = Path(__file__).parent / "lib"
+        candidates = [
+            str(folder / name) for name in ("libmercan.so", "libmercan.dylib", "mercan.dll")
+            if (folder / name).is_file()
+        ]
+        system = find_library("mercan")
+        if system:
+            candidates.append(system)
+    if not candidates:
         raise MercanLibraryNotFound(
-            "libmercan not found. Build/install MercanRuntime with "
-            "MERCAN_BUILD_SHARED=ON, then pass library_path=... or set "
-            "ETHOSOFT_MERCAN_LIBRARY to the absolute shared-library path."
+            "libmercan not found. Build MercanRuntime with MERCAN_BUILD_SHARED=ON, "
+            "pass library_path=..., set ETHOSOFT_MERCAN_LIBRARY, or install a "
+            "platform-specific native wheel."
         )
-    try:
-        return C.CDLL(str(Path(library).expanduser()) if explicit else library)
-    except OSError as exc:
-        raise MercanLibraryNotFound(f"Could not load libmercan from {library!r}: {exc}") from exc
+    failures = []
+    for library in candidates:
+        try:
+            return C.CDLL(str(Path(library).expanduser()) if explicit else library)
+        except OSError as exc:
+            failures.append(f"{library}: {exc}")
+    raise MercanLibraryNotFound("Could not load libmercan: " + "; ".join(failures))
 
 
 def _bind(library: C.CDLL, symbol: str, result: object, *args: object) -> None:

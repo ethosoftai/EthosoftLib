@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ethosoftlib"
-version = "0.1.0"
+version = "0.2.0"
 description = "Extensible Python SDK for independent Ethosoft products and integrations"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,7 +23,8 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "build>=1.0"]
+hub = ["huggingface_hub>=0.30"]
+dev = ["pytest>=7", "build>=1.0", "huggingface_hub>=0.30"]
 
 [project.urls]
 Repository = "https://github.com/ethosoftai/EthosoftLib"
@@ -32,6 +33,9 @@ Issues = "https://github.com/ethosoftai/EthosoftLib/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["ethosoftlib*"]
+
+[tool.setuptools.package-data]
+"ethosoftlib.mercan" = ["lib/*.so", "lib/*.dylib", "lib/*.dll"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
