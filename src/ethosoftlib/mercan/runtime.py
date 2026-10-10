@@ -228,7 +228,7 @@ class MercanModel:
         if not handle:
             raise native_error(self._runtime._lib, "Could not create Mercan context")
         self._contexts += 1
-        return MercanContext(self, handle, int(p.n_batch))
+        return MercanContext(self, handle, int(p.n_batch), p)
 
     def generate(
         self, prompt: str, *, max_new_tokens: int = 128,
@@ -277,10 +277,12 @@ class MercanModel:
 
 
 class MercanContext:
-    def __init__(self, model: MercanModel, handle: int, batch_size: int) -> None:
+    def __init__(self, model: MercanModel, handle: int, batch_size: int, params: object) -> None:
         self._model = model
         self._handle = handle
         self._batch_size = batch_size
+        self._params = params
+        self._tokens_used = 0
 
     def _check(self) -> None:
         self._model._check()
@@ -291,6 +293,32 @@ class MercanContext:
     def size(self) -> int:
         self._check()
         return int(self._model._runtime._lib.mercan_context_size(self._handle))
+
+    @property
+    def tokens_used(self) -> int:
+        """Number of tokens explicitly processed since context creation/reset."""
+        self._check()
+        return self._tokens_used
+
+    @property
+    def tokens_remaining(self) -> int:
+        """Conservative context-space budget for additional token decoding."""
+        return max(0, self.size - self.tokens_used)
+
+    def reset(self) -> None:
+        """Clear all native KV state by replacing the context safely.
+
+        Inference backends own the KV cache; this operation does not presume
+        compatibility of their internal cache formats or private APIs.
+        """
+        self._check()
+        library = self._model._runtime._lib
+        replacement = library.mercan_context_create(self._model._handle, self._params)
+        if not replacement:
+            raise native_error(library, "Could not reset Mercan context")
+        library.mercan_context_free(self._handle)
+        self._handle = replacement
+        self._tokens_used = 0
 
     def decode(self, tokens: Sequence[int]) -> None:
         self._check()
@@ -303,6 +331,7 @@ class MercanContext:
             code = fn(self._handle, batch, len(chunk))
             if code != 0:
                 raise native_error(self._model._runtime._lib, f"mercan_decode returned {code}")
+            self._tokens_used += len(chunk)
 
     def greedy_token(self) -> int:
         self._check()
