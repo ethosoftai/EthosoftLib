@@ -51,9 +51,9 @@ libmercan.so / libmercan.dylib / mercan.dll
 MercanRuntime native backends and plugins
 ```
 
-The Python package does not embed native Mercan binaries, llama.cpp, CUDA, or
-model files. The native library is loaded only when `MercanRuntime()` is
-constructed. Set `ETHOSOFT_MERCAN_LIBRARY` to the shared library path or pass
+The pure-Python wheel does not embed native Mercan binaries, CUDA, or
+model files. Optional platform-specific native wheels can include libmercan
+and NedoTokenizer as shared libraries. Native libraries are loaded on demand, never during import of ethosoftlib. Set `ETHOSOFT_MERCAN_LIBRARY` to the shared library path or pass
 `library_path=...`.
 
 The native ABI used by this first version matches
@@ -64,9 +64,10 @@ reimplement architecture discovery, tokenizer algorithms, or ggml graph code.
 ## Lifecycle and compatibility
 
 Create runtime → load model → create context. Close in the inverse order;
-context managers are recommended. Multi-turn KV policies, HF downloads, and
-chat template formatting are **not** in this initial low-level binding.
-`generate()` is a minimal greedy helper for an already formatted prompt.
+context managers are recommended. The high-level mercan.Model now provides HF downloads, ChatML, sync/async
+streaming, metadata and benchmarking. The low-level MercanContext offers
+native KV budget accounting and reset, but does not share KV across turns.
+`generate()` remains a greedy helper for already formatted prompts.
 
 Before publishing PyPI wheels, build a compatible shared `libmercan` for each
 platform and add real-model end-to-end regression testing. Tests without a
