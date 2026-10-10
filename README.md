@@ -77,3 +77,33 @@ is required at runtime. On Linux build a library with
 `bash scripts/build_nedo_native_linux.sh`; the script creates the exact
 Rust bridge, not an approximate Python reimplementation.
 See [NedoTokenizer guide](docs/NEDO_TOKENIZER.md).
+
+## SDK v0.4 developer tools
+
+The Mercan adapter adds synchronous / asynchronous token streaming,
+model metadata inspection, wall-time benchmarking and explicit context KV
+reset. The generic EthosoftLib core remains dependency-free.
+
+```python
+from ethosoftlib.mercan import Model
+with Model.from_pretrained("MercanAI/Mercan-0.8B-SFT") as model:
+    print(model.info())
+    for chunk in model.stream_chat("Merhaba!"):
+        print(chunk, end="", flush=True)
+    print(model.benchmark(runs=3, max_tokens=32))
+```
+
+See [Mercan Python SDK](docs/MERCAN_PYTHON.md) for async methods.
+
+Architecture developers can validate and package signed-by-checksum
+Mercan Plugin ABI v1 binaries without executing them:
+
+```bash
+python -m ethosoftlib.plugins scaffold myarchitecture ./myarchitecture
+python -m ethosoftlib.plugins validate ./myarchitecture/mercan-plugin.json
+python -m ethosoftlib.plugins pack ./myarchitecture/mercan-plugin.json ./myarchitecture.zip
+```
+
+See [Plugin SDK](docs/PLUGIN_SDK.md). Native Rust NedoTokenizer wheel
+jobs now target Linux x86_64, Windows x64 and macOS Apple Silicon;
+builds are separate from PyPI publication.
