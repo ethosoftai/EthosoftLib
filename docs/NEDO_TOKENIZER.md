@@ -45,3 +45,12 @@ publication. Windows/macOS binary packages are not provided yet.
 This is a separate optional integration under `ethosoftlib.nedo` so future
 products can use NedoTokenizer without MercanRuntime. No mandatory dependency
 is added to `ethosoftlib.core`.
+
+## Experimental cross-platform native build matrix
+
+The workflow `.github/workflows/nedo-native-matrix.yml` compiles the **same
+original Rust NDSRF004** as a native shared library on Linux x86_64,
+Windows x64 and macOS Apple Silicon runners. It stages the library inside
+`ethosoftlib.nedo.lib`, creates platform-tagged wheels, and tests a fresh
+wheel installation. Workflow success is not equivalent to a PyPI release
+or verified installation on all host configurations.
