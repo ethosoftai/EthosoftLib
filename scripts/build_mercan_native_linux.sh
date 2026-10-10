@@ -3,7 +3,7 @@
 # Uses pinned MercanRuntime source; only run on trusted Linux build workers.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MERCAN_REF="${MERCAN_REF:-0e0f46e490d8d5d98bb746c899d6d87124151756}"
+MERCAN_REF="${MERCAN_REF:-f8c8414845dcf52ad1344a477c1cc88ade83c595}"
 MERCAN_SRC="${MERCAN_SRC:-$ROOT/.native-work/MercanRuntime}"
 MERCAN_JOBS="${MERCAN_JOBS:-2}"
 if [[ ! -f "$MERCAN_SRC/CMakeLists.txt" ]]; then
