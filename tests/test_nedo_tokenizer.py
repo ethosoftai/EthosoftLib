@@ -99,4 +99,4 @@ def test_mercans_optional_alias():
 
 def test_pyproject_version_is_consistent():
     from ethosoftlib import __version__
-    assert __version__ == "0.3.0"
+    assert __version__ == "0.4.0"
