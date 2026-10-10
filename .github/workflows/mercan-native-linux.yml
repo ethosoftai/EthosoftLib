@@ -14,6 +14,10 @@ on:
       - 'tests/test_mercan_integration_contract.py'
       - '.github/workflows/mercan-native-linux.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
