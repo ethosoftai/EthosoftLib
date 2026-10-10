@@ -58,6 +58,66 @@ class MercanRuntime:
         self._models += 1
         return MercanModel(self, handle)
 
+    def load_plugin(self, library_path: str | os.PathLike[str]) -> bool:
+        """Explicitly load a trusted native plugin (returns False if already loaded).
+
+        Mercan retains native plugins for process lifetime. Only load binaries
+        whose provenance you trust; native code has the process's privileges.
+        """
+        self._check()
+        if self._models:
+            raise MercanError("Load architecture plugins before loading models")
+        path = Path(library_path).expanduser().resolve(strict=True)
+        if not path.is_file() or path.suffix not in (".so", ".dll", ".dylib"):
+            raise ValueError("Expected a native Mercan plugin shared library")
+        from .native import _bind
+        _bind(self._lib, "mercan_plugin_load_v1", C.c_int, C.c_char_p)
+        _bind(self._lib, "mercan_plugin_last_error_v1", C.c_char_p)
+        result = self._lib.mercan_plugin_load_v1(os.fsencode(path))
+        if result not in (0, 1):
+            raw = self._lib.mercan_plugin_last_error_v1()
+            message = raw.decode("utf-8", "replace") if raw else "Unknown native plugin error"
+            raise MercanError(f"Mercan plugin load failed: {message}")
+        return result == 0
+
+    def load_plugin_from_manifest(self, manifest_path: str | os.PathLike[str]) -> bool:
+        """Verify ABI and SHA256 for the current platform before explicit loading."""
+        import platform
+        from ethosoftlib.plugins import read_manifest
+        manifest = read_manifest(manifest_path)
+        system, machine = platform.system().lower(), platform.machine().lower()
+        if system == "linux" and machine in ("x86_64", "amd64"):
+            target = "linux_x86_64"
+        elif system == "windows" and machine in ("x86_64", "amd64"):
+            target = "windows_amd64"
+        elif system == "darwin" and machine in ("arm64", "aarch64"):
+            target = "macos_arm64"
+        elif system == "darwin" and machine in ("x86_64", "amd64"):
+            target = "macos_x86_64"
+        else:
+            raise MercanError(f"No Mercan plugin target for {system}/{machine}")
+        if target not in manifest["binaries"]:
+            raise MercanError(f"Plugin has no native binary for {target}")
+        base = Path(manifest_path).resolve()
+        if base.is_dir():
+            base /= "mercan-plugin.json"
+        return self.load_plugin(base.parent / manifest["binaries"][target])
+
+    def list_plugins(self) -> tuple[tuple[str, str, str], ...]:
+        """Read the name/version/path for registered native plugins."""
+        self._check()
+        from .native import _bind
+        _bind(self._lib, "mercan_plugin_count_v1", C.c_size_t)
+        for name in ("mercan_plugin_name_v1", "mercan_plugin_version_v1", "mercan_plugin_path_v1"):
+            _bind(self._lib, name, C.c_char_p, C.c_size_t)
+        result = []
+        for index in range(self._lib.mercan_plugin_count_v1()):
+            result.append(tuple(
+                (getattr(self._lib, name)(index) or b"").decode("utf-8", "replace")
+                for name in ("mercan_plugin_name_v1", "mercan_plugin_version_v1", "mercan_plugin_path_v1")
+            ))
+        return tuple(result)
+
     def close(self) -> None:
         if self._closed:
             return
