@@ -77,3 +77,17 @@ destination = ROOT / "src" / "ethosoftlib" / "mercan" / "lib" / filename
 destination.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(binaries[0], destination)
 print("Staged Mercan CPU shared library:", destination, destination.stat().st_size)
+
+# The combined desktop SDK wheel carries both the inference runtime and
+# standalone NedoTokenizer, avoiding same-tag native wheel conflicts on PyPI.
+nedo_name = (
+    "nedo004_ffi.dll" if sys.platform == "win32" else
+    "libnedo004_ffi.dylib" if sys.platform == "darwin" else "libnedo004_ffi.so"
+)
+nedo_source = vendor / "nedo004-ffi" / "target" / "release" / nedo_name
+if not nedo_source.is_file():
+    raise SystemExit(f"Missing exact original Rust tokenizer cdylib: {nedo_source}")
+nedo_destination = ROOT / "src" / "ethosoftlib" / "nedo" / "lib" / nedo_name
+nedo_destination.parent.mkdir(parents=True, exist_ok=True)
+shutil.copy2(nedo_source, nedo_destination)
+print("Staged standalone NDSRF004 shared library:", nedo_destination)
