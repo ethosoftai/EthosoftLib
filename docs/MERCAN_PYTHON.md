@@ -125,3 +125,32 @@ tokens into a new native context for each turn. Cross-turn KV reuse requires
 token-prefix parity and model-backed cache correctness testing.
 
 See [Plugin SDK](PLUGIN_SDK.md) for architecture extensions.
+
+## Desktop-native binary build (CPU, combined Mercan + Nedo)
+
+The automated GitHub Actions workflow in
+`.github/workflows/mercan-native-desktop.yml` builds a platform wheel with
+**both** the native Mercan C++ inference library and the exact Rust NDSRF004
+tokenizer on Linux x86_64, Windows x64, and macOS Apple Silicon. It installs
+the completed wheel into a clean Python environment and verifies library
+loading, native runtime version, and Turkish Unicode tokenizer round-trip.
+
+Local prerequisites: Rust, C/C++ compiler, Git, CMake and Python 3.10+.
+The developer build command is:
+
+```bash
+python scripts/build_mercan_native_desktop.py
+python -m pip install build
+python -m build --wheel
+python scripts/verify_mercan_native_wheel.py
+```
+
+Native wheels are tagged `py3-none-<platform>` since the underlying Rust/C++
+shared libraries use `ctypes` and do not depend on the CPython extension ABI.
+These GitHub Actions artifacts are **not** yet PyPI releases. Linux wheels
+must be manylinux-audited/repaired before official publication. GPU-enabled
+CUDA and Metal builds need separate distribution verification. Device auto
+currently remains CPU-first by design.
+
+The Python base remains free of mandatory dependencies and does not compile
+or download executable native code during `pip install` for the pure wheel.
