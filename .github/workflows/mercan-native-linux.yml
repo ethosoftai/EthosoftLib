@@ -1,6 +1,11 @@
 name: Mercan native Linux model smoke
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/ethosoftlib/mercan/**'
+      - 'tests/test_mercan_integration_contract.py'
+      - '.github/workflows/mercan-native-linux.yml'
   push:
     branches: [main, feature/mercan-hf-chat-api]
     paths:
@@ -8,6 +13,10 @@ on:
       - 'scripts/build_mercan_native_linux.sh'
       - 'tests/test_mercan_integration_contract.py'
       - '.github/workflows/mercan-native-linux.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read

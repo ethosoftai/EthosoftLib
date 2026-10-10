@@ -148,6 +148,31 @@ class Tokenizer:
     def decode(self, ids: Iterable[int], *, errors: str = "strict") -> str:
         return self.decode_bytes(ids).decode("utf-8", errors=errors)
 
+    def batch_encode(self, texts: Iterable[str | bytes], *,
+                     add_special_tokens: bool = False) -> list[list[int]]:
+        """Encode multiple documents using one initialized native vocabulary."""
+        return [self.encode(text, add_special_tokens=add_special_tokens) for text in texts]
+
+    def batch_decode(self, groups: Iterable[Iterable[int]], *,
+                     errors: str = "strict") -> list[str]:
+        """Decode multiple NDSRF004 sequences with exact UTF-8 handling."""
+        return [self.decode(ids, errors=errors) for ids in groups]
+
+    def inspect(self, text: str | bytes) -> dict[str, object]:
+        """Inspect exact tokenizer cost and losslessness without an LLM."""
+        raw = text.encode("utf-8") if isinstance(text, str) else text
+        if not isinstance(raw, bytes):
+            raise TypeError("inspect expects str or bytes")
+        ids = self.encode(raw)
+        return {
+            "token_ids": ids,
+            "token_count": len(ids),
+            "input_bytes": len(raw),
+            "bytes_per_token": len(raw) / len(ids) if ids else 0.0,
+            "lossless_roundtrip": self.decode_bytes(ids) == raw,
+            "vocab_sha256": self.vocab_sha256,
+        }
+
     def tokenize(self, text: str | bytes) -> list[int]:
         return self.encode(text)
 

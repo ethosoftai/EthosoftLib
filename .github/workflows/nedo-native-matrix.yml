@@ -1,0 +1,64 @@
+name: NedoTokenizer native wheels - Linux Windows macOS
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/ethosoftlib/nedo/**'
+      - 'scripts/stage_nedo_native.py'
+      - 'scripts/verify_nedo_native_wheel.py'
+      - 'scripts/verify_plugin_scaffold.py'
+      - '.github/workflows/nedo-native-matrix.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/ethosoftlib/nedo/**'
+      - 'scripts/stage_nedo_native.py'
+      - 'scripts/verify_nedo_native_wheel.py'
+      - '.github/workflows/nedo-native-matrix.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  nedo-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: Ahmet2001/MercanRuntime
+          ref: a4693b6ce17c6c934a352f81b2183169ab903651
+          path: .native-work/MercanRuntime
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build original Rust NDSRF004 dynamic library
+        run: cargo build --release --manifest-path .native-work/MercanRuntime/runtime/nedo004-ffi/Cargo.toml
+      - name: Stage native library
+        run: python scripts/stage_nedo_native.py
+      - name: Install Python SDK dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Rust-native tokenizer tests
+        run: python -m pytest -q tests/test_nedo_tokenizer.py tests/test_plugin_sdk.py
+      - name: Compile sample architecture against public Mercan Plugin ABI
+        run: python scripts/verify_plugin_scaffold.py
+      - name: Build OS-specific wheel
+        run: python -m build --wheel
+      - name: Verify clean install and Turkish tokenizer round-trip
+        run: python scripts/verify_nedo_native_wheel.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ethosoftlib-nedo-${{ matrix.os }}-wheel
+          path: dist/*.whl
+          if-no-files-found: error

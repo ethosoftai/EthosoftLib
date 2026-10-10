@@ -18,6 +18,10 @@ on:
       - 'tests/test_nedo*'
       - '.github/workflows/nedo-native-linux.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

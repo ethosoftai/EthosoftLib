@@ -1,0 +1,50 @@
+name: Mercan native desktop wheels - CPU
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'scripts/build_mercan_native_desktop.py'
+      - 'scripts/verify_mercan_native_wheel.py'
+      - '.github/workflows/mercan-native-desktop.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/build_mercan_native_desktop.py'
+      - 'scripts/verify_mercan_native_wheel.py'
+      - '.github/workflows/mercan-native-desktop.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-native-cpu:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install SDK packaging tools
+        run: python -m pip install build
+      - name: Build pinned Mercan + Nedo native shared libraries
+        run: python scripts/build_mercan_native_desktop.py
+      - name: Compile unified native wheel
+        run: python -m build --wheel
+      - name: Validate wheel in clean environment
+        run: python scripts/verify_mercan_native_wheel.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ethosoftlib-mercan-nedo-${{ matrix.os }}-cpu
+          path: dist/*.whl
+          if-no-files-found: error

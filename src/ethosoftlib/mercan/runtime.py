@@ -58,6 +58,66 @@ class MercanRuntime:
         self._models += 1
         return MercanModel(self, handle)
 
+    def load_plugin(self, library_path: str | os.PathLike[str]) -> bool:
+        """Explicitly load a trusted native plugin (returns False if already loaded).
+
+        Mercan retains native plugins for process lifetime. Only load binaries
+        whose provenance you trust; native code has the process's privileges.
+        """
+        self._check()
+        if self._models:
+            raise MercanError("Load architecture plugins before loading models")
+        path = Path(library_path).expanduser().resolve(strict=True)
+        if not path.is_file() or path.suffix not in (".so", ".dll", ".dylib"):
+            raise ValueError("Expected a native Mercan plugin shared library")
+        from .native import _bind
+        _bind(self._lib, "mercan_plugin_load_v1", C.c_int, C.c_char_p)
+        _bind(self._lib, "mercan_plugin_last_error_v1", C.c_char_p)
+        result = self._lib.mercan_plugin_load_v1(os.fsencode(path))
+        if result not in (0, 1):
+            raw = self._lib.mercan_plugin_last_error_v1()
+            message = raw.decode("utf-8", "replace") if raw else "Unknown native plugin error"
+            raise MercanError(f"Mercan plugin load failed: {message}")
+        return result == 0
+
+    def load_plugin_from_manifest(self, manifest_path: str | os.PathLike[str]) -> bool:
+        """Verify ABI and SHA256 for the current platform before explicit loading."""
+        import platform
+        from ethosoftlib.plugins import read_manifest
+        manifest = read_manifest(manifest_path)
+        system, machine = platform.system().lower(), platform.machine().lower()
+        if system == "linux" and machine in ("x86_64", "amd64"):
+            target = "linux_x86_64"
+        elif system == "windows" and machine in ("x86_64", "amd64"):
+            target = "windows_amd64"
+        elif system == "darwin" and machine in ("arm64", "aarch64"):
+            target = "macos_arm64"
+        elif system == "darwin" and machine in ("x86_64", "amd64"):
+            target = "macos_x86_64"
+        else:
+            raise MercanError(f"No Mercan plugin target for {system}/{machine}")
+        if target not in manifest["binaries"]:
+            raise MercanError(f"Plugin has no native binary for {target}")
+        base = Path(manifest_path).resolve()
+        if base.is_dir():
+            base /= "mercan-plugin.json"
+        return self.load_plugin(base.parent / manifest["binaries"][target])
+
+    def list_plugins(self) -> tuple[tuple[str, str, str], ...]:
+        """Read the name/version/path for registered native plugins."""
+        self._check()
+        from .native import _bind
+        _bind(self._lib, "mercan_plugin_count_v1", C.c_size_t)
+        for name in ("mercan_plugin_name_v1", "mercan_plugin_version_v1", "mercan_plugin_path_v1"):
+            _bind(self._lib, name, C.c_char_p, C.c_size_t)
+        result = []
+        for index in range(self._lib.mercan_plugin_count_v1()):
+            result.append(tuple(
+                (getattr(self._lib, name)(index) or b"").decode("utf-8", "replace")
+                for name in ("mercan_plugin_name_v1", "mercan_plugin_version_v1", "mercan_plugin_path_v1")
+            ))
+        return tuple(result)
+
     def close(self) -> None:
         if self._closed:
             return
@@ -168,7 +228,7 @@ class MercanModel:
         if not handle:
             raise native_error(self._runtime._lib, "Could not create Mercan context")
         self._contexts += 1
-        return MercanContext(self, handle, int(p.n_batch))
+        return MercanContext(self, handle, int(p.n_batch), p)
 
     def generate(
         self, prompt: str, *, max_new_tokens: int = 128,
@@ -217,10 +277,12 @@ class MercanModel:
 
 
 class MercanContext:
-    def __init__(self, model: MercanModel, handle: int, batch_size: int) -> None:
+    def __init__(self, model: MercanModel, handle: int, batch_size: int, params: object) -> None:
         self._model = model
         self._handle = handle
         self._batch_size = batch_size
+        self._params = params
+        self._tokens_used = 0
 
     def _check(self) -> None:
         self._model._check()
@@ -231,6 +293,32 @@ class MercanContext:
     def size(self) -> int:
         self._check()
         return int(self._model._runtime._lib.mercan_context_size(self._handle))
+
+    @property
+    def tokens_used(self) -> int:
+        """Number of tokens explicitly processed since context creation/reset."""
+        self._check()
+        return self._tokens_used
+
+    @property
+    def tokens_remaining(self) -> int:
+        """Conservative context-space budget for additional token decoding."""
+        return max(0, self.size - self.tokens_used)
+
+    def reset(self) -> None:
+        """Clear all native KV state by replacing the context safely.
+
+        Inference backends own the KV cache; this operation does not presume
+        compatibility of their internal cache formats or private APIs.
+        """
+        self._check()
+        library = self._model._runtime._lib
+        replacement = library.mercan_context_create(self._model._handle, self._params)
+        if not replacement:
+            raise native_error(library, "Could not reset Mercan context")
+        library.mercan_context_free(self._handle)
+        self._handle = replacement
+        self._tokens_used = 0
 
     def decode(self, tokens: Sequence[int]) -> None:
         self._check()
@@ -243,6 +331,7 @@ class MercanContext:
             code = fn(self._handle, batch, len(chunk))
             if code != 0:
                 raise native_error(self._model._runtime._lib, f"mercan_decode returned {code}")
+            self._tokens_used += len(chunk)
 
     def greedy_token(self) -> int:
         self._check()
