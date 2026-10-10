@@ -100,3 +100,18 @@ def test_mercans_optional_alias():
 def test_pyproject_version_is_consistent():
     from ethosoftlib import __version__
     assert __version__ == "0.4.0"
+
+
+
+def test_batch_tokenization_and_inspection(monkeypatch):
+    import ethosoftlib.nedo as nedo
+    monkeypatch.setattr(nedo, "_load_library", lambda _: FakeLibrary())
+    tok = Tokenizer()
+    samples = ["İstanbul", "Merhaba 😀", ""]
+    encoded = tok.batch_encode(samples)
+    assert tok.batch_decode(encoded) == samples
+    stats = tok.inspect("Merhaba!")
+    assert stats["token_count"] == len(tok.encode("Merhaba!"))
+    assert stats["lossless_roundtrip"]
+    assert stats["input_bytes"] == len("Merhaba!".encode())
+    assert stats["vocab_sha256"] == EXPECTED_SHA256
