@@ -107,3 +107,13 @@ python -m ethosoftlib.plugins pack ./myarchitecture/mercan-plugin.json ./myarchi
 See [Plugin SDK](docs/PLUGIN_SDK.md). Native Rust NedoTokenizer wheel
 jobs now target Linux x86_64, Windows x64 and macOS Apple Silicon;
 builds are separate from PyPI publication.
+
+## Platform packaging status (0.4.0)
+
+GitHub Actions provides separately tested combined Mercan+Nedo CPU native
+wheels for Linux x86_64, Windows x64 and Apple Silicon macOS. These are
+currently CI artifacts, not published PyPI binaries. Run
+`python scripts/build_mercan_native_desktop.py` and
+`python -m build --wheel` to produce an OS-native developer wheel.
+See [Mercan Python SDK](docs/MERCAN_PYTHON.md) and
+[Plugin SDK](docs/PLUGIN_SDK.md).
