@@ -85,3 +85,16 @@ specific assumptions.
 shared library. It has no Mercan model dependency. It is lazily registered
 as `tokenizer/nedo` in the generic provider registry. Because the native
 Rust library is optional, merely importing EthosoftLib loads no native code.
+
+## SDK extension points
+
+The `plugins/` package contains independent Mercan Plugin ABI v1
+developer tooling: declarative metadata inspection, SHA256 platform-binary
+verification, ZIP packaging and C++ registration scaffolding. It does not
+turn `ethosoftlib.core` into a Mercan-specific SDK. Loading a native plugin
+is an explicit call on `ethosoftlib.mercan.MercanRuntime`.
+See [PLUGIN_SDK.md](PLUGIN_SDK.md).
+
+The Mercan model adapter now has sync/async streaming, metadata inspection,
+wall-clock benchmarking and conservative native context token accounting.
+No cross-turn KV reuse is promised by these features.
