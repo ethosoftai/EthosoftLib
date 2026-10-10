@@ -17,6 +17,10 @@ on:
       - 'scripts/verify_nedo_native_wheel.py'
       - '.github/workflows/nedo-native-matrix.yml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
