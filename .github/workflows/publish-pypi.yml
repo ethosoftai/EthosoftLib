@@ -1,11 +1,31 @@
 name: Publish EthosoftLib to PyPI
 
 on:
-  # Only a published GitHub release can upload to PyPI.
+  # A published GitHub release uploads to PyPI.
   release:
     types: [published]
-  # Safe dry run: builds and uploads a GitHub artifact, never publishes.
+  # Manual retry of an ALREADY published release: explicit opt-in.
+  # Default remains build-only. Run manual publishing on main.
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: "Publish an existing GitHub release to PyPI? (default: build only)"
+        type: boolean
+        default: false
+        required: true
+      release_tag:
+        description: "Existing published release tag, e.g. v0.4.0"
+        type: string
+        default: "v0.4.0"
+        required: true
+  # Run the packaging checks before merging workflow changes.
+  pull_request:
+    paths:
+      - '.github/workflows/publish-pypi.yml'
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'src/**'
+      - 'tests/**'
 
 permissions:
   contents: read
@@ -18,13 +38,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # Manual publish builds from the immutable release TAG, not the
+          # current default branch. This preserves original release content.
+          ref: ${{ (github.event_name == 'release' && github.event.release.tag_name) || (github.event_name == 'workflow_dispatch' && inputs.publish_release && inputs.release_tag) || github.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Check release tag matches pyproject version
-        if: github.event_name == 'release'
+      - name: Verify manual publishing targets an existing public release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_release
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          test "${GITHUB_REF}" = "refs/heads/main" || { echo "Manual publishing is restricted to main"; exit 1; }
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '(.draft == false) and (.prerelease == false)')" = "true" || {
+            echo "Release tag does not refer to a published, non-prerelease GitHub Release"; exit 1;
+          }
+      - name: Check release tag matches pyproject version
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+        env:
+          RELEASE_TAG: ${{ (github.event_name == 'release' && github.event.release.tag_name) || inputs.release_tag }}
         shell: bash
         run: |
           python - <<'PY'
@@ -40,6 +74,8 @@ jobs:
           PY
       - name: Install packaging and tests
         run: python -m pip install --upgrade build twine pytest
+      - name: Install this source checkout for tests
+        run: python -m pip install --no-deps -e .
       - name: Test dependency-free SDK core
         run: |
           python -m compileall -q src
@@ -73,7 +109,7 @@ jobs:
 
   publish:
     name: Publish verified package to PyPI (OIDC)
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.publish_release == true && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-latest
     environment:
