@@ -24,7 +24,11 @@ dependencies = []
 
 [project.optional-dependencies]
 hub = ["huggingface_hub>=0.30"]
-dev = ["pytest>=7", "build>=1.0", "huggingface_hub>=0.30"]
+math = ["sympy>=1.12"]
+dev = ["pytest>=7", "build>=1.0", "huggingface_hub>=0.30", "sympy>=1.12"]
+
+[project.scripts]
+ethosoftlib-math = "ethosoftlib.math.cli:main"
 
 [project.urls]
 Repository = "https://github.com/ethosoftai/EthosoftLib"

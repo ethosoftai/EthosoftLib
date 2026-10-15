@@ -45,6 +45,23 @@ Add other integrations under their own namespaces:
 `ethosoftlib.education`, `ethosoftlib.data`, etc. See
 [architecture guidelines](docs/ARCHITECTURE.md).
 
+## Math tool-use (`ethosoftlib.math`)
+
+Verified math tool-use toolkit: text -> `<arac_cagrisi>bol(48, 2)</arac_cagrisi><arac_sonucu>24</arac_sonucu>`,
+a tool-call executor and a calculator. Pure Python, needs only `sympy`:
+
+```bash
+pip install 'ethosoftlib[math]'
+```
+
+```python
+import ethosoftlib.math as em
+em.fill_results("<arac_cagrisi>bol(48, 2)</arac_cagrisi>")  # fills <arac_sonucu>24</arac_sonucu>
+em.calculate("4 + 5")                                        # '9'
+```
+
+See [docs/MATH.md](docs/MATH.md) and the [function list](docs/MATH_PROTOCOL.md).
+
 ## Development
 
 ```bash

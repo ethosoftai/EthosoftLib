@@ -94,3 +94,9 @@ providers.register(
     "tokenizer", "nedo", "ethosoftlib.nedo:Tokenizer",
     description="Original Rust NDSRF004 tokenizer, no LLM required",
 )
+
+# Pure-Python math tool-use toolkit (needs only sympy; imported on demand).
+providers.register(
+    "tooluse", "math", "ethosoftlib.math:MathToolkit",
+    description="Verified math tool-use: text->tool calls, executor and calculator (needs sympy)",
+)
