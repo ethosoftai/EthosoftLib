@@ -1,0 +1,90 @@
+name: Publish EthosoftLib to PyPI
+
+on:
+  # Only a published GitHub release can upload to PyPI.
+  release:
+    types: [published]
+  # Safe dry run: builds and uploads a GitHub artifact, never publishes.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and validate Python package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check release tag matches pyproject version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+          metadata = tomllib.loads(Path("pyproject.toml").read_text("utf-8"))
+          version = metadata["project"]["version"]
+          tag = os.environ["RELEASE_TAG"]
+          if tag != f"v{version}":
+              raise SystemExit(f"Release tag {tag!r} != package version v{version}")
+          print(f"Publishing exact version: {version}")
+          PY
+      - name: Install packaging and tests
+        run: python -m pip install --upgrade build twine pytest
+      - name: Test dependency-free SDK core
+        run: |
+          python -m compileall -q src
+          python -m pytest -q tests/test_registry.py tests/test_plugin_sdk.py tests/test_mercan_chat.py tests/test_nedo_tokenizer.py
+      - name: Build sdist and universal Python wheel
+        run: python -m build
+      - name: Verify metadata, wheel platform tag, and no bundled native payload
+        shell: bash
+        run: |
+          python -m twine check dist/*
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+          wheels = list(Path("dist").glob("*.whl"))
+          sdists = list(Path("dist").glob("*.tar.gz"))
+          assert len(wheels) == 1 and len(sdists) == 1, (wheels, sdists)
+          assert wheels[0].name.endswith("-py3-none-any.whl"), wheels[0]
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              members = wheel.namelist()
+              assert not any(n.endswith((".so", ".dylib", ".dll")) for n in members), members
+              assert any(n.endswith("/math/__init__.py") for n in members), "Math module missing"
+              assert any(n.endswith("/nedo/__init__.py") for n in members), "Nedo Python adapter missing"
+              assert any(n.endswith("/mercan/model.py") for n in members), "Mercan Python adapter missing"
+          print("Source distribution and pure Python wheel validated")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-ethosoftlib-distributions
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish verified package to PyPI (OIDC)
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/ethosoftlib
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pypi-ethosoftlib-distributions
+          path: dist/
+      - name: Upload using PyPI Trusted Publishing
+        uses: pypa/gh-action-pypi-publish@release/v1

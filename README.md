@@ -6,7 +6,13 @@ generic `ethosoftlib.core` registry. The root import never loads native engines.
 
 ## Mercan: high-level Python API
 
-Install from GitHub with the optional Hugging Face extra (not yet on PyPI):
+For published PyPI releases, install with the optional Hugging Face extra:
+
+```bash
+pip install 'ethosoftlib[hub]'
+```
+
+For the latest development version, install directly from GitHub:
 
 ```bash
 pip install 'ethosoftlib[hub] @ git+https://github.com/ethosoftai/EthosoftLib.git'
@@ -134,3 +140,12 @@ currently CI artifacts, not published PyPI binaries. Run
 `python -m build --wheel` to produce an OS-native developer wheel.
 See [Mercan Python SDK](docs/MERCAN_PYTHON.md) and
 [Plugin SDK](docs/PLUGIN_SDK.md).
+
+## Publishing to PyPI
+
+`ethosoftlib` releases are prepared using GitHub Actions and PyPI Trusted
+Publishing. The release workflow builds and validates a pure-Python package,
+without collecting or storing long-lived API tokens.
+
+See [the PyPI release guide](docs/PYPI_RELEASE.md) for first-time account
+setup, safe dry runs, release tags and native wheel limitations.
