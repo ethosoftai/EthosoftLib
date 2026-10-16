@@ -66,3 +66,31 @@ veya `ethosoftlib-math calc "4 + 5"`.
 
 Ölçülen kapsam (ayarlanmamış örneklerde): hesabı olan çözüm satırlarının ~%85'inde en az bir
 doğrulanmış çağrı üretilir; geri kalanı demet, sözel sayı, türev cümlesi gibi kural dışı yazımlardır.
+
+## Ceviri (EN -> TR): Ethosoft-Math-Translator
+
+`ethosoftlib.math.translate`, ince ayarli [`ethosoftai/Ethosoft-Math-Translator`](https://huggingface.co/ethosoftai/Ethosoft-Math-Translator)
+modeliyle (NedoTranslator tabanli) matematik metnini Turkceye cevirir. LaTeX, kod, URL, arac bloklari ve matematik
+sembolleri `[[n]]` ile maskelenir, sadece soz kismi cevrilir, formuller birebir geri konur. Formulu garanti edilemeyen
+satir bozulmaz, reddedilir (`None`).
+
+```bash
+pip install "ethosoftlib[translate]"
+```
+
+```python
+import ethosoftlib.math as em
+
+t = em.translator()                                  # ethosoftai/Ethosoft-Math-Translator
+t.translate("If $x^2 = 9$, then x = ±3.")
+t.translate_record({"problem": "What is $1+1$?", "solution": "It is $2$."})   # None: formul risk altinda
+
+em.MathToolkit().translate("Compute $x^2$.")         # registry cephesi
+```
+
+```bash
+ethosoftlib-math translate "Compute $x^2$ for x = 3."
+ethosoftlib-math translate --input data.jsonl --output data_tr.jsonl
+```
+
+Model karti ve sonuclar: <https://huggingface.co/ethosoftai/Ethosoft-Math-Translator>.

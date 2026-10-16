@@ -25,6 +25,7 @@ dependencies = []
 [project.optional-dependencies]
 hub = ["huggingface_hub>=0.30"]
 math = ["sympy>=1.12"]
+translate = ["sympy>=1.12", "torch", "transformers>=4.33", "sentencepiece"]
 dev = ["pytest>=7", "build>=1.0", "huggingface_hub>=0.30", "sympy>=1.12"]
 
 [project.scripts]

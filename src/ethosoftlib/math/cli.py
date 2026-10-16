@@ -28,6 +28,29 @@ def _convert_file(args):
     print(f"satir={n} aracli={n_conv} ({100 * n_conv / max(1, n):.1f}%) cagri={n_calls} hatali={n_bad}")
 
 
+def _translate(args):
+    from .translate import MODEL_ID, MathTranslator
+    t = MathTranslator(args.model or MODEL_ID)
+    if args.input:
+        if not args.output:
+            raise SystemExit("--input ile --output de gerekli")
+        fields = tuple(args.fields.split(","))
+        n = ok = 0
+        with open(args.input, encoding="utf-8") as fin, open(args.output, "w", encoding="utf-8") as fout:
+            for line in fin:
+                if not line.strip():
+                    continue
+                n += 1
+                new = t.translate_record(json.loads(line), fields=fields)
+                if new is not None:
+                    ok += 1
+                    fout.write(json.dumps(new, ensure_ascii=False) + "
+")
+        print(f"satir={n} cevrilen={ok} atilan={n - ok}")
+    else:
+        print(t.translate(args.text if args.text is not None else sys.stdin.read()))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="ethosoftlib-math", description="Matematik tool-use protokolu")
     ap.add_argument("--version", action="version", version=__version__)
@@ -61,6 +84,14 @@ def main(argv=None):
     e = sub.add_parser("exec", help="tek bir arac cagrisini calistir, orn: topla(3, 4)")
     e.add_argument("call")
     e.set_defaults(func=lambda a: print(execute(a.call)))
+
+    tr = sub.add_parser("translate", help="Ingilizce matematik metnini Turkceye cevir (Ethosoft-Math-Translator)")
+    tr.add_argument("text", nargs="?", help="verilmezse stdin okunur")
+    tr.add_argument("--input", help="jsonl (problem/solution) -> --output'a problem_tr/solution_tr yazar")
+    tr.add_argument("--output")
+    tr.add_argument("--model", default=None)
+    tr.add_argument("--fields", default="problem,solution")
+    tr.set_defaults(func=_translate)
 
     args = ap.parse_args(argv)
     sys.stdout.reconfigure(encoding="utf-8")

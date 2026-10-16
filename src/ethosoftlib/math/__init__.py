@@ -42,6 +42,12 @@ def verify(text: str):
     return verify_converted(text)
 
 
+def translator(**kw):
+    """Ethosoft-Math-Translator (EN->TR, formul korumali) ceviricisini dondurur. Ek bagimlilik: ethosoftlib[translate]."""
+    from .translate import MathTranslator
+    return MathTranslator(**kw)
+
+
 def functions():
     """Protokoldeki fonksiyonlar: {ad: {cat, sig, doc}}"""
     return {k: {"cat": v["cat"], "sig": v["sig"], "doc": v["doc"]} for k, v in REG.items()}
@@ -74,3 +80,9 @@ class MathToolkit:
 
     def verify(self, text: str):
         return verify(text)
+
+    def translate(self, text: str, **kw):
+        """EN->TR matematik cevirisi (modeli ilk cagrida yukler)."""
+        if getattr(self, "_translator", None) is None:
+            self._translator = translator()
+        return self._translator.translate(text, **kw)
