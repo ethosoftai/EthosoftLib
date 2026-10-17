@@ -28,7 +28,7 @@ from .runtime import fill_results, result_block  # noqa: F401
 from . import mask  # noqa: F401
 from .converter import convert_text, verify_converted  # noqa: F401
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 
 def convert(text: str, aggressive: bool = False, lang: str = None) -> str:

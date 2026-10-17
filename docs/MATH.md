@@ -94,3 +94,16 @@ ethosoftlib-math translate --input data.jsonl --output data_tr.jsonl
 ```
 
 Model karti ve sonuclar: <https://huggingface.co/Ethosoft/Ethosoft-Math-Translator>.
+
+### Turkce metin -> arac bicimi
+
+Arac donusturucusu Turkce cozumlerde de calisir: Unicode birimler (`öğrenci`), ondalik virgul (`4,50`), binlik nokta
+(`50.000`), sayidan sonra `$` (`4,50 $`), `x` ile carpma ve `çarpı / bölü / artı / eksi / eşittir` kelimeleri.
+Donusmeyen metindeki sayilar Turkce bicimini korur. Ceviri + arac donusumu tek adimda:
+
+```python
+em.translator().translate_record({"problem": "...", "solution": "..."}, tools=True)
+```
+```bash
+ethosoftlib-math translate --input data.jsonl --output data_tr_tools.jsonl --tools
+```

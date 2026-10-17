@@ -41,14 +41,14 @@ def _translate(args):
                 if not line.strip():
                     continue
                 n += 1
-                new = t.translate_record(json.loads(line), fields=fields)
+                new = t.translate_record(json.loads(line), fields=fields, tools=args.tools)
                 if new is not None:
                     ok += 1
                     fout.write(json.dumps(new, ensure_ascii=False) + "
 ")
         print(f"satir={n} cevrilen={ok} atilan={n - ok}")
     else:
-        print(t.translate(args.text if args.text is not None else sys.stdin.read()))
+        print(t.translate(args.text if args.text is not None else sys.stdin.read(), tools=args.tools))
 
 
 def main(argv=None):
@@ -91,6 +91,7 @@ def main(argv=None):
     tr.add_argument("--output")
     tr.add_argument("--model", default=None)
     tr.add_argument("--fields", default="problem,solution")
+    tr.add_argument("--tools", action="store_true", help="ceviriden sonra hesaplari arac cagrisi bicimine de cevir")
     tr.set_defaults(func=_translate)
 
     args = ap.parse_args(argv)

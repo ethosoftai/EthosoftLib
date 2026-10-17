@@ -1,6 +1,6 @@
 """Ethosoft-Math-Translator ile matematik metni Ingilizce -> Turkce ceviri (formul/sembol korumali).
 
-    >>> from ethosoftlib.math.translate import MathTranslator
+    >>> from ethosoft_math.translate import MathTranslator
     >>> t = MathTranslator()                      # Ethosoft/Ethosoft-Math-Translator (ilk kullanimda indirilir)
     >>> t.translate("If $x^2 = 9$, then x is ±3.")
     'Eğer $x^2 = 9$ ise, x = ±3 olur.'
@@ -125,8 +125,10 @@ class MathTranslator:
         return res
 
     # --- API ---------------------------------------------------------------------------------
-    def translate_many(self, texts: List[str], strict: bool = True) -> List[Optional[str]]:
-        """Metin listesini cevirir. strict=True: yer tutucusu bozulan metin icin None; False: eksik parcalar sona eklenir."""
+    def translate_many(self, texts: List[str], strict: bool = True, tools: bool = False,
+                       tool_lang: str = "tr") -> List[Optional[str]]:
+        """Metin listesini cevirir. strict=True: yer tutucusu bozulan metin icin None; False: eksik parcalar sona eklenir.
+        tools=True: ceviriden sonra dogrulanabilir hesaplar arac cagrisina cevrilir (`topla(3, 4)` -> 7); tool_lang 'tr'|'en'."""
         if self._lines_fn is None:
             self._load()
         plans = []
@@ -153,19 +155,28 @@ class MathTranslator:
                     break
                 lines.append(r)
             out.append(None if bad else "\n".join(lines))
+        if tools:
+            out = [None if o is None else self.to_tools(o, tool_lang) for o in out]
         return out
 
-    def translate(self, text: str, strict: bool = False) -> Optional[str]:
-        return self.translate_many([text], strict=strict)[0]
+    @staticmethod
+    def to_tools(text: str, lang: str = "tr") -> str:
+        """Turkce (ya da herhangi bir) cozum metnindeki hesaplari arac cagrisi bicimine cevirir (sympy gerekir)."""
+        from .converter import convert_text
+        return convert_text(text, lang=lang, locale="auto")[0]
+
+    def translate(self, text: str, strict: bool = False, tools: bool = False) -> Optional[str]:
+        return self.translate_many([text], strict=strict, tools=tools)[0]
 
     def translate_record(self, rec: dict, fields=("problem", "solution"), suffix: str = "_tr",
-                         strict: bool = True) -> Optional[dict]:
-        """{'problem':..,'solution':..} -> ayni kayit + problem_tr/solution_tr. Bir alan basarisizsa None."""
+                         strict: bool = True, tools: bool = False, tool_fields=("solution",)) -> Optional[dict]:
+        """{'problem':..,'solution':..} -> ayni kayit + problem_tr/solution_tr. Bir alan basarisizsa None.
+        tools=True: tool_fields (varsayilan sadece 'solution') ceviri sonrasi arac cagrisi bicimine de cevrilir."""
         vals = self.translate_many([rec[f] for f in fields], strict=strict)
         if any(v is None for v in vals):
             return None
         new = dict(rec)
         for f, v in zip(fields, vals):
-            new[f + suffix] = v
+            new[f + suffix] = self.to_tools(v) if (tools and f in tool_fields) else v
         new["translator"] = {"provider": "ethosoft-math-translator", "model": self.model_id}
         return new

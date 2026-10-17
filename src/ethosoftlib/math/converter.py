@@ -22,7 +22,7 @@ _TOK = re.compile(r"""
   (?P<NUM>(?<![\d.])(?:\d{1,3}(?:(?:,\\!|\{,\}|,)\d{3})+(?!\d)|\d+)(?:\.\d+)?|(?<![\d.])\.\d+)
  |(?P<CMD>\\[A-Za-z]+)
  |(?P<ESC>\\[%$,;!:\s_])
- |(?P<WORD>[A-Za-z]+)
+ |(?P<WORD>[A-Za-zÀ-ÖØ-öø-ɏ]+)
  |(?P<SP>\s+)
  |(?P<CH>.)
 """, re.X | re.S)
@@ -44,6 +44,10 @@ if as or we it has have had total each every per from into than this these those
 not no yes can will would should could must may might do does did its their his her our your
 what when where who how why also only just more less most least about over under between
 after before again once both all any some such other same new old first second third""".split())
+_STOP |= set("""ve veya ile için bir bu şu o da de ise ama fakat çünkü gibi kadar her toplam toplamı olarak olan olur
+olduğu olduğundan daha en çok az ne kaç sonra önce şimdi yani böylece nedenle dolayısıyla çıkar eder etti etmiş vardır
+var yok eşittir eşit hem ya ki mi mı mu mü diye üzere göre kez defa tane adet ayrıca ancak sadece yalnızca
+bulunur bulunmaktadır olsun olacak olmalı ifadesi değeri sayısı sonuç sonucu cevap cevabı""".split())
 _NL_SYMS = set("xyznkpqwtr") | (set("ABCDEFGHJKLMNOPQRSTUVWXYZ"))
 _UNIT_TEXT = {"\\text", "\\mbox", "\\mathrm", "\\textbf", "\\mathbf"}
 
@@ -740,7 +744,7 @@ _LATEX_HINT = re.compile(r"\\(?:frac|dfrac|sqrt|times|cdot|boxed|text|left|right
                          r"Rightarrow|implies)\b|\^\{|\\\(|\\\[")
 _REGION = re.compile(r"\$\$(.+?)\$\$|\$([^$\n]+?)\$|\\\((.+?)\\\)|\\\[(.+?)\\\]", re.S)
 _ALLOWED_OPS = set("+-*/^(){}!%")
-_X_MULT = re.compile(r"(?<=[\d)])(\s*|\s+(?:[A-Za-z]+\s+){1,2})[xX](\s*)(?=[\d($])")
+_X_MULT = re.compile(r"(?<=[\d)])(\s*|\s+(?:[A-Za-z\u00c0-\u00d6\u00d8-\u00f6\u00f8-\u024f]+\s+){1,2})[xX](\s*)(?=[\d($])")
 _CODE_HINT = re.compile(r"^\s*(print\(|def |import |from \w+ import |for .+ in |return )", re.M)
 
 
@@ -756,6 +760,12 @@ _WORD_SUBS = [
     (re.compile(r"(?<=[\d)}])[\s,]*(?:which equals|which is equal to|is equal to|equals|equal to|gives)\s+"
                 r"(?=[\d(\\$-])", re.I), _pad("=")),
     (re.compile(r"(?<=%)\s+of\s+(?=[\d(\\$])", re.I), _pad("*")),
+    # Turkce
+    (re.compile(r"(?<=[\d)}])\s+(?:çarpı|kere)\s+(?=[\d(\\$-])", re.I), _pad("*")),
+    (re.compile(r"(?<=[\d)}])\s+bölü\s+(?=[\d(\\$-])", re.I), _pad("/")),
+    (re.compile(r"(?<=[\d)}])\s+artı\s+(?=[\d(\\$-])", re.I), _pad("+")),
+    (re.compile(r"(?<=[\d)}])\s+eksi\s+(?=[\d(\\$-])", re.I), _pad("-")),
+    (re.compile(r"(?<=[\d)}])[\s,]*(?:eşittir|eşit)\s+(?=[\d(\\$-])", re.I), _pad("=")),
 ]
 
 
@@ -883,11 +893,80 @@ def _nums_after(text, pos):
     return vals
 
 
-def convert_text(text: str, aggressive: bool = False, lang: str = None):
-    """(yeni_metin, istatistik). lang: 'tr' (varsayilan) veya 'en' (kanonik etiket/adlar)."""
+_TR_CHARS = re.compile(r"[çğıöşüÇĞİÖŞÜ]")
+_TR_WORDS = re.compile(r"\b(?:ve|bir|bu|için|ile|olarak|toplam|kadar|olur|ise|her|daha|kaç|yani|böylece)\b")
+_TR_NUM = re.compile(r"(?<![\d.,])(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+,\d+)(?![\d])")
+_SKIP_SEG = re.compile(r"(<<[^<>]*>>|\$\$.+?\$\$|\$[^$\n]+?\$|\\\(.+?\\\)|\\\[.+?\\\]|```.*?```)", re.S)
+_TAGS_SEG = re.compile(r"(<(?:arac_cagrisi|tool_call)>.*?(?:</(?:arac_sonucu|tool_result)>|</(?:arac_cagrisi|tool_call)>))", re.S)
+_CUR_SUFFIX = re.compile(r"(?<=\d) \$(?![\d$])")
+_NUM_TOK = re.compile(r"(?<![\d.,])\d[\d.,]*\d|(?<![\d.,])\d")
+
+
+def _looks_turkish(text: str) -> bool:
+    return bool(_TR_CHARS.search(text)) or len(_TR_WORDS.findall(text)) >= 2
+
+
+def _tr_num_to_en(tok: str) -> str:
+    """4,50 -> 4.50 ; 50.000 -> 50,000 ; 1.500,75 -> 1,500.75  (uzunluk korunur)."""
+    return tok.translate({ord("."): ",", ord(","): "."})
+
+
+def _swap_tr_numbers(text: str):
+    """Matematik/kod disindaki Turkce bicimli sayilari EN bicimine cevirir. (yeni_metin, [(en, orijinal), ...])"""
+    pairs, out = [], []
+    for seg in _SKIP_SEG.split(text):
+        if _SKIP_SEG.fullmatch(seg):
+            out.append(seg)
+            continue
+
+        def rep(m):
+            en = _tr_num_to_en(m.group(1))
+            pairs.append((en, m.group(1)))
+            return en
+        out.append(_TR_NUM.sub(rep, seg))
+    return "".join(out), pairs
+
+
+def _restore_tr_numbers(text: str, pairs):
+    """Donusumden sonra, arac bloklari ve matematik disindaki sayilari sirayla Turkce bicimine geri dondurur."""
+    if not pairs:
+        return text
+    ptr = [0]
+    out = []
+    for seg in _TAGS_SEG.split(text):
+        if _TAGS_SEG.fullmatch(seg):
+            out.append(seg)
+            continue
+        for sub in _SKIP_SEG.split(seg):
+            if _SKIP_SEG.fullmatch(sub):
+                out.append(sub)
+                continue
+
+            def rep(m):
+                for j in range(ptr[0], len(pairs)):
+                    if pairs[j][0] == m.group(0):
+                        ptr[0] = j + 1
+                        return pairs[j][1]
+                return m.group(0)
+            out.append(_NUM_TOK.sub(rep, sub))
+    return "".join(out)
+
+
+def convert_text(text: str, aggressive: bool = False, lang: str = None, locale: str = "auto"):
+    """(yeni_metin, istatistik). lang: 'tr' (varsayilan) veya 'en' (kanonik etiket/adlar).
+    locale: sayi bicimi. 'auto' (metin Turkceye benziyorsa 'tr'), 'tr' (4,50 ondalik, 50.000 binlik) veya 'en'."""
     lang = lang or _P.LANG
+    tr_locale = locale == "tr" or (locale == "auto" and _looks_turkish(text))
+    pairs = []
+    if tr_locale:
+        # "4,50 $" gibi sayidan sonra gelen para birimi isareti LaTeX ayraci sanilmasin (uzunluk korunur)
+        text = _CUR_SUFFIX.sub(" \u00a4", text)
+        text, pairs = _swap_tr_numbers(text)
     with _P.use_language(lang):
         out, st = _convert_text_impl(text, aggressive)
+    if tr_locale:
+        out = out.replace(" \u00a4", " $")
+        out = _restore_tr_numbers(out, pairs) if pairs else out
     return _P.localize(out, lang), st
 
 
