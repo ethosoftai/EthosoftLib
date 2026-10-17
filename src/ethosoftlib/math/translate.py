@@ -1,7 +1,7 @@
 """Ethosoft-Math-Translator ile matematik metni Ingilizce -> Turkce ceviri (formul/sembol korumali).
 
     >>> from ethosoftlib.math.translate import MathTranslator
-    >>> t = MathTranslator()                      # ethosoftai/Ethosoft-Math-Translator (ilk kullanimda indirilir)
+    >>> t = MathTranslator()                      # Ethosoft/Ethosoft-Math-Translator (ilk kullanimda indirilir)
     >>> t.translate("If $x^2 = 9$, then x is ±3.")
     'Eğer $x^2 = 9$ ise, x = ±3 olur.'
 
@@ -15,7 +15,7 @@ from typing import Callable, Dict, List, Optional
 
 from . import mask as _mask
 
-MODEL_ID = "ethosoftai/Ethosoft-Math-Translator"
+MODEL_ID = "Ethosoft/Ethosoft-Math-Translator"
 
 _PH = re.compile(r"\[\[\s*(\d+)\s*\]\]")
 _WORD = re.compile(r"[A-Za-zÇĞİÖŞÜçğıöşü]{2,}")
