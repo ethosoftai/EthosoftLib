@@ -63,3 +63,9 @@ def test_translate_record_tools_only_touches_solution():
     r = t.translate_record({"problem": "Each costs 4.50 dollars, so 2 * 4.50 = 9.00 dollars.",
                             "solution": "Peter has 3 apples and buys 4 more, so 3 + 4 = 7 apples."}, tools=True)
     assert "<arac_cagrisi>" in r["solution_tr"] and "<arac_cagrisi>" not in r["problem_tr"]
+
+
+def test_text_that_already_contains_placeholder_syntax_is_refused_not_crashed():
+    t = MathTranslator(translate_lines=_fake)
+    assert t.translate("Use the label [[3]] in the table.", strict=True) is None
+    assert t.translate_many(["ok sentence here", "Use the label [[3]] in the table."]) [0].startswith("TR:")

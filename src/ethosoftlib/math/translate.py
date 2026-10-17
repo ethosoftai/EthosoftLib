@@ -133,6 +133,9 @@ class MathTranslator:
             self._load()
         plans = []
         for text in texts:
+            if _PH.search(text):          # metinde zaten [[n]] yazisi var: yer tutucu semasi belirsizlesir -> guvenle cevrilemez
+                plans.append(None)        # literal_ph
+                continue
             masked, spans = protect_all(text, self._is_unk)
             items = []
             for ln in masked.split("\n"):
@@ -140,10 +143,13 @@ class MathTranslator:
                 nl, sp = _renumber(ln, spans) if _PH.search(ln) else (ln, [])
                 items.append((nl, sp, bool(_WORD.search(_PH.sub(" ", nl)))))
             plans.append(items)
-        todo = sorted({nl for items in plans for nl, _, need in items if need})
+        todo = sorted({nl for items in plans if items is not None for nl, _, need in items if need})
         done = dict(zip(todo, self._translate_lines(todo))) if todo else {}
         out = []
         for items in plans:
+            if items is None:
+                out.append(None)
+                continue
             lines, bad = [], False
             for nl, sp, need in items:
                 if not need:
