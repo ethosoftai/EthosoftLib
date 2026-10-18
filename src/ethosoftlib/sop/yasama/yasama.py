@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from ..runtime.backends import ChatBackend, GenerationConfig
+from ..runtime.local_tools import BUILTIN_TOOL_REGISTRY
 from ..runtime.output_parsing import parse_canonical_action
 from ..runtime.serialization import serialize_yasama_input
 
@@ -31,7 +32,7 @@ CANONICAL_ACTIONS = frozenset(
     }
 )
 
-YASAMA_SYSTEM_PROMPT = """Sen Mercan Yasama modelisin.
+_YASAMA_PROMPT_TEMPLATE = """Sen Mercan Yasama modelisin.
 Görevin kullanıcı isteği, konuşma geçmişi ve mevcut state'e bakarak yalnızca bir sonraki canonical action'ı seçmektir.
 Argüman üretme, açıklama yapma ve kullanıcıya final cevap yazma.
 Çıktın yalnızca aşağıdaki action isimlerinden tam olarak biri olmalıdır:
@@ -39,6 +40,7 @@ RESPOND, WEB_SEARCH, WEB_OPEN, FILE_READ, FILE_SEARCH, FILE_LIST, FILE_CREATE, F
 
 En üstteki USER alanı mevcut istektir ve her zaman birincildir. CONVERSATION_HISTORY yalnızca bağlamdır; önceki isteğin action'ını yeni USER isteğine kopyalama.
 
+{action_descriptions}
 Niyet eşleme örnekleri:
 - Kullanıcı sadece sohbet/bilgi cevabı istiyorsa ve araç gerekmiyorsa: RESPOND
 - Kullanıcı e-posta/mail göndermek istiyor ama alıcı, konu veya içerik eksikse: ASK_CLARIFICATION
@@ -62,6 +64,36 @@ Niyet eşleme örnekleri:
 "ACTION:" etiketi, JSON, markdown veya açıklama yazma. Yalnız action adını yaz.
 """
 
+_CONTROL_ACTION_DESCRIPTIONS = {
+    "RESPOND": "Araç gerekmeden doğrudan cevap verilecek sohbet veya bilgi soruları.",
+    "ASK_CLARIFICATION": (
+        "İstenen araç için zorunlu bilgi (örneğin mail alıcısı) eksikse "
+        "kullanıcıya soru sorulur."
+    ),
+    "FINISH": "Mevcut turda gerekli araç çalıştı ve sonucu STATE.recent_observations içinde.",
+}
+_ACTION_ORDER = (
+    "RESPOND", "WEB_SEARCH", "WEB_OPEN", "FILE_READ", "FILE_SEARCH", "FILE_LIST",
+    "FILE_CREATE", "FILE_EDIT", "FILE_DELETE", "FILE_MOVE", "CODE_EXECUTE",
+    "SHELL_EXECUTE", "DOWNLOAD", "SEND_MAIL", "ASK_CLARIFICATION", "FINISH",
+)
+
+
+def _action_descriptions() -> str:
+    """Describe actions from the same registry Yurutme receives schemas from."""
+    lines = ["Action'lar ve ne zaman seçilecekleri:"]
+    for action in _ACTION_ORDER:
+        description = _CONTROL_ACTION_DESCRIPTIONS.get(action)
+        if description is None:
+            description = BUILTIN_TOOL_REGISTRY[action]["description"]
+        lines.append(f"- {action}: {description}")
+    return "\n".join(lines) + "\n"
+
+
+YASAMA_SYSTEM_PROMPT = _YASAMA_PROMPT_TEMPLATE.replace(
+    "{action_descriptions}", _action_descriptions()
+)
+
 _EMPTY_STATE: dict[str, Any] = {
     "completed_actions": [],
     "last_observation": None,
@@ -69,9 +101,15 @@ _EMPTY_STATE: dict[str, Any] = {
     "step_index": 0,
     "turn_index": 0,
 }
+_LIST_OBSERVATION: dict[str, Any] = {
+    "action": "FILE_LIST",
+    "data": {"entries": ["docs/api.md"]},
+    "status": "success",
+    "error": None,
+}
 _READ_OBSERVATION: dict[str, Any] = {
     "action": "FILE_READ",
-    "data": {"path": "README.md", "content": "...", "truncated": False},
+    "data": {"path": "README.md"},
     "status": "success",
     "error": None,
 }
@@ -101,6 +139,18 @@ YASAMA_FEW_SHOT_EXAMPLES: tuple[tuple[str, list[dict[str, str]], dict[str, Any],
             "completed_actions": ["FILE_READ"],
             "last_observation": _READ_OBSERVATION,
             "recent_observations": [_READ_OBSERVATION],
+            "step_index": 1,
+        },
+        "FINISH",
+    ),
+    (
+        "docs klasöründeki dosyaları listele.",
+        [],
+        {
+            **_EMPTY_STATE,
+            "completed_actions": ["FILE_LIST"],
+            "last_observation": _LIST_OBSERVATION,
+            "recent_observations": [_LIST_OBSERVATION],
             "step_index": 1,
         },
         "FINISH",

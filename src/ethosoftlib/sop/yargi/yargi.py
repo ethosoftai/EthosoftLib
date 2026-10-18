@@ -21,37 +21,93 @@ RUNTIME_INFO verilmişse, sistemde hangi rollerin ve araçların bulunduğuna da
 Kullanıcı yeni bir soru sorduğunda önceden verilen yanıtı tekrarlama. FINISH, RESPOND gibi action adlarını kullanıcıya açıklama olarak yazma.
 
 Çıktın doğrudan kullanıcıya gidecek doğal dil cevabı olmalıdır. JSON object, JSON wrapper, markdown code fence veya alan adı (response, result, file_summary vb.) kullanma.
-
-Örnekler (yalnızca biçim örneğidir; cevabı her zaman mevcut istek ve gerçek gözlemlerden üret):
-
-Girdi:
-Bu klasördeki Python dosyalarını listele.
-<tool_observations>
-[{"action": "FILE_LIST", "data": {"path": ".", "pattern": "*.py", "recursive": false, "entries": ["cli.py", "main.py"]}, "status": "success", "error": null}]
-</tool_observations>
-Çıktı: Klasörde iki Python dosyası var: cli.py ve main.py.
-
-Girdi:
-notes.txt dosyasını oku.
-<tool_observations>
-[{"action": "FILE_READ", "data": {}, "status": "error", "error": "File not found: notes.txt"}]
-</tool_observations>
-Çıktı: notes.txt dosyasını okuyamadım; dosya bulunamadı.
-
-Girdi:
-Projede "TODO" geçen yerleri bul.
-<tool_observations>
-[{"action": "FILE_SEARCH", "data": {"query": "TODO", "matches": []}, "status": "success", "error": null}]
-</tool_observations>
-Çıktı: Projede "TODO" geçen bir yer bulunamadı.
-
-Girdi:
-Merhaba, nasılsın?
-<tool_observations>
-[]
-</tool_observations>
-Çıktı: Merhaba, iyiyim, teşekkürler. Sana nasıl yardımcı olabilirim?
 """
+
+
+def _observation(
+    action: str, data: dict[str, Any], error: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "action": action,
+        "data": data,
+        "status": "error" if error else "success",
+        "error": error,
+    }
+
+
+# Shown as prior user/assistant turns.  Inline system-prompt examples made
+# small checkpoints echo the observations or the rules themselves.  The set
+# mixes successes, an error and a no-tool turn so the model does not copy one
+# outcome (e.g. reporting "not found" for a successful read).
+YARGI_FEW_SHOT_EXAMPLES: tuple[tuple[str, list[dict[str, Any]], str], ...] = (
+    (
+        "docs klasöründeki dosyaları listele.",
+        [_observation("FILE_LIST", {
+            "path": "docs", "pattern": "*", "recursive": False,
+            "entries": ["docs/kurulum.md", "docs/api.md", "docs/sss.md", "docs/logo.png"],
+        })],
+        "docs klasöründe dört dosya var: kurulum.md, api.md, sss.md ve logo.png.",
+    ),
+    (
+        "VERSION dosyasını oku, sürüm ne?",
+        [_observation("FILE_READ", {
+            "path": "VERSION", "content": "2.4.1\n", "truncated": False,
+        })],
+        "VERSION dosyasına göre sürüm 2.4.1.",
+    ),
+    (
+        "Projede 'TODO' geçen yerleri bul.",
+        [_observation("FILE_SEARCH", {}, "Directory not found: /src")],
+        "Arama yapılamadı; aranacak klasör bulunamadı.",
+    ),
+    (
+        "Merhaba, nasılsın?",
+        [],
+        "Merhaba, iyiyim, teşekkürler. Sana nasıl yardımcı olabilirim?",
+    ),
+)
+
+
+def _few_shot_messages() -> list[dict[str, str]]:
+    messages: list[dict[str, str]] = []
+    for user_prompt, observations, response in YARGI_FEW_SHOT_EXAMPLES:
+        messages.append({
+            "role": "user",
+            "content": serialize_yargi_input(
+                user_prompt=user_prompt,
+                conversation_history=[],
+                observations=observations,
+            ),
+        })
+        messages.append({"role": "assistant", "content": response})
+    return messages
+
+
+YARGI_HISTORY_MESSAGES = 6
+
+
+def _history_messages(
+    conversation_history: Sequence[Mapping[str, Any]],
+) -> list[dict[str, str]]:
+    """Replay recent turns as real chat turns.
+
+    Embedded as a CONVERSATION_HISTORY JSON block, small checkpoints echoed
+    the block as the answer, and the echo then grew the history every turn.
+    """
+    turns: list[dict[str, str]] = []
+    for message in conversation_history:
+        role, content = message.get("role"), message.get("content")
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        if role == "user":
+            # Same shape as the current request: past turns carry no tool
+            # observations of their own.
+            content = serialize_yargi_input(
+                user_prompt=content, conversation_history=[], observations=[],
+            )
+        turns.append({"role": role, "content": content})
+    return turns[-YARGI_HISTORY_MESSAGES:]
+
 
 InferenceFn = Callable[[dict[str, Any]], str]
 
@@ -120,11 +176,15 @@ class YargiRuntime:
                         )
                     ),
                 },
+                # With real history the model cannot tell example turns from
+                # the conversation and repeats example observations as facts.
+                *(_history_messages(payload["conversation_history"])
+                  or _few_shot_messages()),
                 {
                     "role": "user",
                     "content": serialize_yargi_input(
                         user_prompt=payload["user_prompt"],
-                        conversation_history=payload["conversation_history"],
+                        conversation_history=[],
                         observations=payload["observations"],
                     ),
                 },

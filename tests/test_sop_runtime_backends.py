@@ -101,9 +101,41 @@ class RuntimeBackendTests(unittest.TestCase):
         )
 
         self.assertEqual(response, "main.py dosyası okundu.")
-        prompt = backend.calls[0][0][1]["content"]
+        messages = backend.calls[0][0]
+        examples = messages[1:-1]
+        self.assertEqual(
+            [m["role"] for m in examples],
+            ["user", "assistant"] * (len(examples) // 2),
+        )
+        # Examples must cover both outcomes so the model does not learn to
+        # report a single one regardless of the real observation.
+        self.assertIn('"status": "success"', "".join(m["content"] for m in examples))
+        self.assertIn('"status": "error"', "".join(m["content"] for m in examples))
+        prompt = messages[-1]["content"]
         self.assertTrue(prompt.startswith("main.py dosyasını oku\n<tool_observations>\n["))
         self.assertTrue(prompt.endswith("\n</tool_observations>"))
+
+    def test_yargi_replays_history_as_chat_turns_without_examples(self) -> None:
+        backend = FakeBackend("Ankara.")
+        runtime = YargiRuntime(backend=backend)
+
+        runtime.run(
+            user_prompt="Türkiye'nin başkenti neresi?",
+            conversation_history=[
+                {"role": "user", "content": "selam"},
+                {"role": "assistant", "content": "Selam!"},
+            ],
+            observations=[],
+        )
+
+        messages = backend.calls[0][0]
+        self.assertEqual([m["role"] for m in messages],
+                         ["system", "user", "assistant", "user"])
+        self.assertTrue(messages[1]["content"].startswith("selam\n<tool_observations>"))
+        self.assertEqual(messages[2]["content"], "Selam!")
+        # The history must not also be pasted into the request as JSON.
+        self.assertNotIn("CONVERSATION_HISTORY", messages[-1]["content"])
+        self.assertTrue(messages[-1]["content"].startswith("Türkiye'nin başkenti neresi?\n"))
 
     def test_yasama_serializer_matches_documented_layout(self) -> None:
         prompt = serialize_yasama_input(

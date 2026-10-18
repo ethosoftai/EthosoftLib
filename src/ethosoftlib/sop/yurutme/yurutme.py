@@ -25,37 +25,62 @@ TOOL_SCHEMA / STATE / ACTION / USER / CONVERSATION_HISTORY anahtarlarını sonu�
 """
 
 # Shown as prior user/assistant turns built from the built-in tool schemas.
-# Each request gets the example for its own action plus one contrasting
+# Each request gets the examples for its own action plus one contrasting
 # action, which keeps the prompt near 1.6k tokens; inline system-prompt
 # examples were copied verbatim by small checkpoints instead of followed.
-YURUTME_FEW_SHOT_EXAMPLES: dict[str, tuple[str, dict[str, Any]]] = {
+# FILE_LIST and WEB_SEARCH carry two examples that differ in every value:
+# with a single example the model copied its values whatever they were, and
+# with none it copied the contrasting example (a "python" search query).
+# FILE_EDIT has none on purpose: its example was copied into a wrong edit,
+# while without one the model fails with invalid JSON and stops the pipeline.
+YURUTME_FEW_SHOT_EXAMPLES: dict[str, tuple[tuple[str, dict[str, Any]], ...]] = {
     "FILE_LIST": (
-        "docs klasöründeki Markdown dosyalarını listele.",
-        {"path": "docs", "pattern": "*.md", "recursive": False},
+        (
+            "Bu klasördeki Python dosyalarını listele.",
+            {"path": ".", "pattern": "*.py", "recursive": False},
+        ),
+        (
+            "docs klasöründeki dosyaları listele.",
+            {"path": "docs", "pattern": "*", "recursive": False},
+        ),
     ),
-    "FILE_READ": (
+    "FILE_READ": ((
         "README.md dosyasını okuyup özetle.",
         {"path": "README.md", "max_chars": 20000},
-    ),
-    "FILE_SEARCH": (
+    ),),
+    "FILE_SEARCH": ((
         'Projede "GenerationConfig" geçen yerleri bul.',
         {"query": "GenerationConfig", "path": ".", "pattern": "*",
          "recursive": True, "max_results": 50},
+    ),),
+    "FILE_MOVE": ((
+        "rapor.pdf dosyasını belgeler klasörüne taşı.",
+        {"source": "rapor.pdf", "destination": "belgeler/rapor.pdf"},
+    ),),
+    "WEB_SEARCH": (
+        (
+            "İnternette 2026 Dünya Kupası maç takvimini ara.",
+            {"query": "2026 Dünya Kupası maç takvimi", "max_results": 5},
+        ),
+        (
+            "Webde Rust ile Python performans karşılaştırması bul.",
+            {"query": "Rust Python performans karşılaştırması", "max_results": 5},
+        ),
     ),
-    "SHELL_EXECUTE": (
+    "SHELL_EXECUTE": ((
         "git status komutunu çalıştır.",
         {"command": "git status", "cwd": "."},
-    ),
-    "CODE_EXECUTE": (
+    ),),
+    "CODE_EXECUTE": ((
         "print(2+2) kodunu çalıştır.",
         {"language": "python", "code": "print(2+2)"},
-    ),
-    "SEND_MAIL": (
+    ),),
+    "SEND_MAIL": ((
         'ali@ornek.com adresine "Toplantı" konulu, "Yarın 10\'da görüşelim." '
         "içerikli bir mail gönder.",
         {"to": "ali@ornek.com", "subject": "Toplantı",
          "body": "Yarın 10'da görüşelim."},
-    ),
+    ),),
 }
 
 _EMPTY_STATE: dict[str, Any] = {
@@ -71,8 +96,12 @@ def _few_shot_messages(action: str) -> list[dict[str, str]]:
     contrast = "SHELL_EXECUTE" if action == "CODE_EXECUTE" else "CODE_EXECUTE"
     selected = [contrast] + ([action] if action in YURUTME_FEW_SHOT_EXAMPLES else [])
     messages: list[dict[str, str]] = []
-    for example_action in selected:
-        user_prompt, arguments = YURUTME_FEW_SHOT_EXAMPLES[example_action]
+    examples = [
+        (example_action, user_prompt, arguments)
+        for example_action in selected
+        for user_prompt, arguments in YURUTME_FEW_SHOT_EXAMPLES[example_action]
+    ]
+    for example_action, user_prompt, arguments in examples:
         tool = BUILTIN_TOOL_REGISTRY[example_action]
         messages.append({
             "role": "user",
