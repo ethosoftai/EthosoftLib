@@ -1,9 +1,12 @@
 """Real original Rust NDSRF004 checks (skip only when binary isn't configured)."""
 from os import environ
+from pathlib import Path
 import pytest
+import ethosoftlib.nedo as nedo
 
-@pytest.mark.skipif(not environ.get("ETHOSOFT_NEDO_LIBRARY"),
-                    reason="set ETHOSOFT_NEDO_LIBRARY to compiled Rust cdylib")
+@pytest.mark.skipif(not (environ.get("ETHOSOFT_NEDO_LIBRARY") or
+                         any((Path(nedo.__file__).parent / "lib").glob("*nedo004_ffi.*"))),
+                    reason="install a native wheel or set ETHOSOFT_NEDO_LIBRARY")
 def test_exact_original_nedo_tokenizer():
     from ethosoftlib.nedo import Tokenizer, EXPECTED_SHA256
     tok = Tokenizer()

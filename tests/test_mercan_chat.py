@@ -48,8 +48,25 @@ class FakeRequest:
     def __enter__(self):
         return self
 
+    def commit(self):
+        pass
+
     def __exit__(self, *_):
         self.closed = True
+
+
+class FakeSession:
+    def __init__(self, model):
+        self.model = model
+
+    def generation(self, **kwargs):
+        return self.model.generation(**kwargs)
+
+    def reset(self):
+        pass
+
+    def close(self):
+        pass
 
 
 class FakeLowLevelModel:
@@ -72,6 +89,9 @@ class FakeLowLevelModel:
     def token_to_bytes(self, token):
         assert token == 1
         return "İyiyim!".encode()
+
+    def chat_session(self, **kwargs):
+        return FakeSession(self)
 
     def context(self, **kwargs):
         context = FakeContext(self)

@@ -63,7 +63,7 @@ jobs:
           MERCAN_TEST_CLI: ${{ github.workspace }}/.native-work/MercanRuntime/build/ethosoftlib-shared/mercan
         run: |
           export ETHOSOFT_MERCAN_TEST_MODEL="$(cat native_model_path.txt)"
-          python -m pytest -q tests/test_mercan_integration_contract.py
+          python -m pytest -q tests/test_mercan_integration_contract.py tests/test_nedo_integration.py
       - name: Build platform-specific wheel
         run: |
           python -m build --wheel
@@ -81,19 +81,8 @@ jobs:
       - name: Verify installed wheel with bundled native library
         shell: bash
         run: |
-          python -m venv /tmp/mercan-wheel-venv
-          /tmp/mercan-wheel-venv/bin/pip install --no-deps dist/*.whl
-          cd /tmp
-          env -u ETHOSOFT_MERCAN_LIBRARY -u MERCAN_LIBRARY_PATH /tmp/mercan-wheel-venv/bin/python - <<'PY'
-          from ethosoftlib.mercan import MercanRuntime
-          with MercanRuntime() as runtime:
-              runtime.require_generation_api()
-              capabilities = runtime.capabilities()
-              assert capabilities["api_version"] == 1
-              assert capabilities["cuda_compiled"] is False
-              assert capabilities["cuda_available"] is False
-              print("Installed native wheel runtime version:", runtime.version)
-          PY
+          python scripts/verify_mercan_native_wheel.py \
+            --model "$(cat native_model_path.txt)" --expect-device cpu
       - name: Upload tested native Linux wheel
         uses: actions/upload-artifact@v4
         with:

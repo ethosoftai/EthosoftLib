@@ -98,8 +98,11 @@ def test_mercans_optional_alias():
 
 
 def test_pyproject_version_is_consistent():
+    from pathlib import Path
+    import re
     from ethosoftlib import __version__
-    assert __version__ == "0.4.0"
+    project = (Path(__file__).resolve().parents[1] / "pyproject.toml").read_text()
+    assert __version__ == re.search(r'^version = "([^"]+)"$', project, re.MULTILINE).group(1)
 
 
 

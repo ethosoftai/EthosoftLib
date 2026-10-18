@@ -80,6 +80,25 @@ def bind_generation_api(library: C.CDLL) -> None:
     _bind(library, "mercan_generation_free_v1", None, ptr)
 
 
+def bind_session_api(library: C.CDLL) -> None:
+    if not hasattr(library, "mercan_session_api_version"):
+        raise MercanError("Native session API v1 is required. Rebuild MercanRuntime >=0.4.0 "
+                          "or install an updated native wheel.")
+    _bind(library, "mercan_session_api_version", C.c_uint32)
+    if library.mercan_session_api_version() != 1:
+        raise MercanError("Incompatible libmercan session API")
+    ptr = C.c_void_p
+    _bind(library, "mercan_session_create_v1", ptr, ptr, ContextParams)
+    _bind(library, "mercan_session_generate_begin_v1", ptr, ptr, C.c_char_p, C.c_size_t,
+          C.POINTER(GenerationParams))
+    _bind(library, "mercan_session_chat_begin_v1", ptr, ptr, C.POINTER(ChatMessage), C.c_size_t,
+          C.c_char_p, C.c_char_p, C.c_char_p, C.POINTER(GenerationParams))
+    _bind(library, "mercan_generation_commit_session_v1", C.c_int, ptr)
+    _bind(library, "mercan_session_reset_v1", C.c_int, ptr)
+    _bind(library, "mercan_session_stats_json_v1", C.c_char_p, ptr)
+    _bind(library, "mercan_session_free_v1", C.c_int, ptr)
+
+
 def bind_device_api(library: C.CDLL) -> None:
     """Require device discovery and verified model placement API v1."""
     if not hasattr(library, "mercan_device_api_version"):

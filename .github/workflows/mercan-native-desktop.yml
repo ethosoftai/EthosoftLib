@@ -6,12 +6,14 @@ on:
     paths:
       - 'scripts/build_mercan_native_desktop.py'
       - 'scripts/verify_mercan_native_wheel.py'
+      - 'scripts/stage_nedo_native.py'
       - '.github/workflows/mercan-native-desktop.yml'
   push:
     branches: [main]
     paths:
       - 'scripts/build_mercan_native_desktop.py'
       - 'scripts/verify_mercan_native_wheel.py'
+      - 'scripts/stage_nedo_native.py'
       - '.github/workflows/mercan-native-desktop.yml'
 
 concurrency:

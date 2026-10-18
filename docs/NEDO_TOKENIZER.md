@@ -25,8 +25,14 @@ preserves invalid UTF-8. BOS=1, EOS=2, PAD=0; adding BOS/EOS is optional.
 
 ## Installation/build
 
-A normal `pip install ethosoftlib` installs the Python adapter but **does
-not** include any native library. Compile the original Rust bridge:
+A platform-native EthosoftLib wheel includes the original Rust shared library
+and its vocabulary/morphology data. With such a wheel, `Tokenizer()` works
+without Mercan model loading, CUDA initialization or environment variables.
+The Linux CPU/CUDA build script and desktop native workflow both stage it,
+together with NedoTokenizer and Zemberek notices and the Apache 2.0 license.
+
+The pure Python wheel contains only the adapter. When building from source,
+compile the Rust bridge or use the combined Mercan build:
 
 ```bash
 bash scripts/build_nedo_native_linux.sh
@@ -40,7 +46,8 @@ morphological model, and SHA validation, no Mercan model download required.
 
 The developer script stages a Linux x86_64 shared library for creating a
 platform wheel. Audit/repair Linux dependencies for manylinux before PyPI
-publication. Windows/macOS binary packages are not provided yet.
+publication. The desktop build workflow also prepares Windows/macOS payloads;
+local Linux validation does not establish that those CI artifacts have passed.
 
 This is a separate optional integration under `ethosoftlib.nedo` so future
 products can use NedoTokenizer without MercanRuntime. No mandatory dependency

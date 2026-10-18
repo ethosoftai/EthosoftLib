@@ -9,14 +9,15 @@ The high-level API is implemented only in `ethosoftlib.mercan`, not in
 pip install 'ethosoftlib[hub]'
 ```
 
-The base EthosoftLib install has **no native dependencies**. The `hub` extra
+The pure Python EthosoftLib wheel has no bundled native payload. Combined native platform
+wheels include Mercan and standalone NedoTokenizer. The `hub` extra
 adds `huggingface_hub` to download the published `model.mercan` artifact.
 The Mercan C ABI is also required: it is not the same as merely installing
 the Mercan CLI. Use a compatible shared libmercan via
 `ETHOSOFT_MERCAN_LIBRARY=/path/to/libmercan.so`, or a platform wheel built
 with a staged native payload.
 
-EthosoftLib 0.7.0 requires MercanRuntime 0.3.0+ with generation and device API v1 for
+EthosoftLib 0.8.0 requires MercanRuntime 0.4.0+ with generation, device and session API v1 for
 `Model.from_pretrained`, `generate`, `chat` and streaming. Older libraries can still serve the
 low-level bindings, but high-level generation reports a clear upgrade error.
 There is no automatic fallback to a Python token generation loop.
@@ -71,10 +72,33 @@ Use `reset_history()` to clear previous turns.
 ChatML role headers mirror Mercan CLI: `sistem`, `kullanici`, `asistan`;
 assistant generation stops at EOS, pad, `im_start`, or `im_end`.
 
-Each turn currently recreates the native inference context and replays
-the transcript. Chat history and async streaming work; across-turn KV cache
-reuse is not yet implemented.
-Context length is bounded; excessive histories raise a useful error.
+`chat`, `stream_chat` and their async variants retain a native context and reuse
+the exact cached token prefix across committed turns. `reset_history()` clears
+both history and KV state and releases the retained context. Interrupted or
+failed turns preserve Python history and discard their touched cache, so the
+next request safely rebuilds it. Context length is bounded; excessive history
+plus output budget raises an error without silently deleting messages.
+`save_history=False` uses a temporary request and leaves the saved chat/cache
+untouched. Stateless `generate` / `stream_generate` also use temporary contexts.
+
+### Independent conversations over one model
+
+```python
+with Model.from_pretrained("/models/model.mercan") as model:
+    with model.session(system_prompt="Türkçe kısa cevap ver.") as a, model.session() as b:
+        print(a.chat("Merhaba"))
+        print(a.chat("Az önce ne demiştim?"))
+        print(a.info()["kv_cache"])  # reused_tokens, prefill_tokens, context_allocations
+        assert b.history == ()
+        a.reset_history()
+```
+
+Sessions share loaded weights and own separate histories and KV caches. Calls
+sharing one model are serialized; close an active stream before issuing another
+request on that model. Closing a session releases its cache; closing the parent
+model closes all its sessions. A session cannot outlive its parent model.
+Backends that cannot safely truncate cached suffixes rebuild the context.
+`context_allocations` is a lifetime counter and is not reset by clearing history.
 
 ### Application-owned messages (native engine in 0.6.0)
 
@@ -133,7 +157,9 @@ python -m build --wheel
 ```
 
 The script checks out MercanRuntime at a fixed known commit, builds a shared
-CPU `libmercan.so`, and stages it into `ethosoftlib.mercan.lib`.
+CPU `libmercan.so`, builds the original Rust NedoTokenizer cdylib, and stages
+both libraries plus Nedo notices in the package. `Tokenizer()` then works
+without a model, an environment variable or a separate native-library install.
 A staged wheel is **platform-tagged**, never `py3-none-any`.
 This is a developer build pipeline, NOT an audited manylinux PyPI release.
 Inspect bundled dependencies using `ldd` and repair for manylinux using

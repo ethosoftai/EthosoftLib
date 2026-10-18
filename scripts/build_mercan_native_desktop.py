@@ -15,7 +15,7 @@ WORK = ROOT / ".native-work"
 MERCAN = WORK / "MercanRuntime"
 LLAMA = MERCAN / "build" / "_deps" / "llama-src"
 MERCAN_COMMIT = os.environ.get(
-    "MERCAN_NATIVE_REF", "600b322f6c1a3a852ac6141ae99c280dcb956dcf"
+    "MERCAN_NATIVE_REF", "357e6e93ddca5d3f2f5186f2b96e6e929e5d9892"
 )
 LLAMA_COMMIT = "e71b80510c848c00175924ecf3c40333ccae8eb5"
 
@@ -43,7 +43,8 @@ vendor = LLAMA / "vendor"
 vendor.mkdir(exist_ok=True)
 shutil.copytree(MERCAN / "runtime" / "nedo004-ffi", vendor / "nedo004-ffi")
 shutil.copytree(MERCAN / "runtime" / "NedoTokenizer", vendor / "NedoTokenizer")
-run("cargo", "build", "--release", "--manifest-path", vendor / "nedo004-ffi" / "Cargo.toml")
+run("cargo", "build", "--locked", "--release", "--lib", "--jobs", os.environ.get("MERCAN_JOBS", "2"),
+    "--manifest-path", vendor / "nedo004-ffi" / "Cargo.toml")
 run("git", "apply", MERCAN / "runtime" / "nedolm" / "nedolm-llama.patch", cwd=LLAMA)
 
 source_models = LLAMA / "src" / "models"
@@ -87,7 +88,5 @@ nedo_name = (
 nedo_source = vendor / "nedo004-ffi" / "target" / "release" / nedo_name
 if not nedo_source.is_file():
     raise SystemExit(f"Missing exact original Rust tokenizer cdylib: {nedo_source}")
-nedo_destination = ROOT / "src" / "ethosoftlib" / "nedo" / "lib" / nedo_name
-nedo_destination.parent.mkdir(parents=True, exist_ok=True)
-shutil.copy2(nedo_source, nedo_destination)
-print("Staged standalone NDSRF004 shared library:", nedo_destination)
+run(sys.executable, ROOT / "scripts/stage_nedo_native.py",
+    "--runtime-source", MERCAN, "--library", nedo_source)

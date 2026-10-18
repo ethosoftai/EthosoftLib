@@ -186,9 +186,85 @@ def test_native_stream_and_async_task_cancellation_release_contexts():
             with suppress(asyncio.CancelledError):
                 await task
         asyncio.run(check_cancel())
-        assert model._model._contexts == 0
+        assert model._native_session is None or model._native_session._requests == 0
+        cache = model.info()["kv_cache"]
+        assert cache is None or cache["cached_tokens"] == 0
         assert model.history == ()
         assert not any(t.name == "mercan-generation" for t in threads())
         with pytest.raises(ValueError, match="exceeds"):
             model.generate(messages, max_tokens=5000)
-        assert model._model._contexts == 0
+        assert model._native_session is None or model._native_session._requests == 0
+
+
+@requires_native
+def test_native_chat_cache_reuse_matches_cold_generation_and_reset():
+    from ethosoftlib.mercan import Model
+    from ethosoftlib.mercan.chat import format_chat
+    with Model.from_pretrained(os.environ["ETHOSOFT_MERCAN_TEST_MODEL"],
+                               library_path=os.environ["ETHOSOFT_MERCAN_LIBRARY"],
+                               system_prompt="Türkçe kısa cevap ver.", n_ctx=512, threads=2) as model:
+        options = dict(temperature=0, max_tokens=8, repeat_penalty=1)
+        first = model.chat("Merhaba, nasılsın?", **options)
+        assert model.info()["kv_cache"]["context_allocations"] == 1
+        messages = [{"role": "system", "content": model.system_prompt}, *model.history,
+                    {"role": "user", "content": "Adın ne?"}]
+        expected = model.generate(messages, **options)
+        assert model.chat("Adın ne?", **options) == expected
+        stats = model.info()["kv_cache"]
+        assert stats["context_allocations"] == 1
+        assert stats["reused_tokens"] > 0
+        assert stats["reused_tokens"] + stats["prefill_tokens"] == len(model._model.tokenize(format_chat(messages)))
+        history, before = model.history, stats.copy()
+        with pytest.raises(ValueError, match="exceeds"):
+            model.chat("Deneme", max_tokens=5000)
+        assert model.history == history
+        assert model.info()["kv_cache"] == before
+        model.chat("Geçici", save_history=False, **options)
+        assert model.history == history and model.info()["kv_cache"] == before
+        model.reset_history()
+        assert model.history == () and model.info()["kv_cache"]["cached_tokens"] == 0
+        assert model.chat("Merhaba, nasılsın?", **options) == first
+        assert model.info()["kv_cache"]["context_allocations"] == 2
+
+
+@requires_native
+def test_native_independent_sessions_and_cancelled_turn_recovery():
+    from ethosoftlib.mercan import Model, MercanError
+    with Model.from_pretrained(os.environ["ETHOSOFT_MERCAN_TEST_MODEL"],
+                               library_path=os.environ["ETHOSOFT_MERCAN_LIBRARY"],
+                               system_prompt="Türkçe kısa cevap ver.", n_ctx=512, threads=2) as model:
+        a, b = model.session(), model.session()
+        options = dict(temperature=0, max_tokens=8)
+        assert a.chat("Merhaba, nasılsın?", **options).strip()
+        assert model.history == b.history == ()
+        assert b.chat("Merhaba", **options).strip()
+        previous = a.history
+        stream = a.stream_chat("Uzun bir hikâye anlat.", max_tokens=64)
+        assert next(stream)
+        with pytest.raises(MercanError, match="active generation stream"):
+            b.chat("Deneme", **options)
+        stream.close()
+        assert a.history == previous
+        assert a.info()["kv_cache"]["cached_tokens"] == 0
+        messages = [{"role": "system", "content": a.system_prompt}, *a.history,
+                    {"role": "user", "content": "Adın ne?"}]
+        expected = a.generate(messages, **options)
+        assert a.chat("Adın ne?", **options) == expected
+        assert a.info()["kv_cache"]["context_allocations"] == 2
+        a.close()
+        assert b.chat("Nasılsın?", **options).strip()
+        assert model._runtime._models == 1
+    assert b._closed and model._model._contexts == 0
+
+
+@requires_native
+def test_bundled_tokenizer_matches_the_model_native_tokenizer():
+    from ethosoftlib.mercan import Model
+    from ethosoftlib.nedo import Tokenizer
+    tokenizer = Tokenizer()
+    with Model.from_pretrained(os.environ["ETHOSOFT_MERCAN_TEST_MODEL"],
+                               library_path=os.environ["ETHOSOFT_MERCAN_LIBRARY"],
+                               device="cpu", threads=2) as model:
+        for text in ("Merhaba, nasılsın?", "İstanbul'daki öğrenciler 😀", "def greet(x):\n    return x + 1\n"):
+            assert tokenizer.encode(text) == model._model.tokenize(text, parse_special=False)
+            assert tokenizer.decode(tokenizer.encode(text)) == text

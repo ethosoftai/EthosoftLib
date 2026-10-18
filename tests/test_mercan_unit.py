@@ -48,6 +48,13 @@ def test_generation_requires_new_native_runtime():
         bind_generation_api(SimpleNamespace())
 
 
+def test_sessions_require_new_native_runtime():
+    from types import SimpleNamespace
+    from ethosoftlib.mercan.native import bind_session_api, MercanError
+    with pytest.raises(MercanError, match="MercanRuntime >=0.4.0"):
+        bind_session_api(SimpleNamespace())
+
+
 def test_old_runtime_is_released_before_model_loading(monkeypatch, tmp_path):
     from unittest.mock import MagicMock
     from ethosoftlib.mercan import Model, MercanError

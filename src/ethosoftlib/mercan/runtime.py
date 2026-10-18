@@ -8,7 +8,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Sequence
 
-from .native import bind_api, bind_device_api, bind_generation_api, load_library, native_error, MercanError
+from .native import bind_api, bind_device_api, bind_generation_api, bind_session_api, load_library, native_error, MercanError
 
 # Mercan's native backend uses process-global initialization.
 _BACKEND_LOCK = RLock()
@@ -45,6 +45,10 @@ class MercanRuntime:
         """Fail before model loading if this library lacks generation API v1."""
         self._check()
         bind_generation_api(self._lib)
+
+    def require_session_api(self) -> None:
+        self._check()
+        bind_session_api(self._lib)
 
     def capabilities(self) -> dict[str, object]:
         """Discover backends compiled into this library and usable devices."""
@@ -319,6 +323,11 @@ class MercanModel:
             raise native_error(self._runtime._lib, "Could not create Mercan context")
         self._contexts += 1
         return MercanContext(self, handle, int(p.n_batch), p)
+
+    def chat_session(self, *, context_options=None):
+        """Own a persistent native context; close it before freeing this model."""
+        from .generation import NativeChatSession
+        return NativeChatSession(self, context_options=context_options)
 
     def generation(self, **options):
         """Create an owned request for the native generation API v1."""

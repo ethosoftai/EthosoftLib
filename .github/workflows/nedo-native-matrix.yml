@@ -37,14 +37,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Ahmet2001/MercanRuntime
-          ref: a4693b6ce17c6c934a352f81b2183169ab903651
+          ref: 357e6e93ddca5d3f2f5186f2b96e6e929e5d9892
           path: .native-work/MercanRuntime
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
       - name: Build original Rust NDSRF004 dynamic library
-        run: cargo build --release --manifest-path .native-work/MercanRuntime/runtime/nedo004-ffi/Cargo.toml
+        run: cargo build --locked --release --lib --jobs 2 --manifest-path .native-work/MercanRuntime/runtime/nedo004-ffi/Cargo.toml
       - name: Stage native library
         run: python scripts/stage_nedo_native.py
       - name: Install Python SDK dependencies

@@ -3,7 +3,7 @@
 # Uses pinned MercanRuntime source; only run on trusted Linux build workers.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MERCAN_REF="${MERCAN_REF:-600b322f6c1a3a852ac6141ae99c280dcb956dcf}"
+MERCAN_REF="${MERCAN_REF:-357e6e93ddca5d3f2f5186f2b96e6e929e5d9892}"
 MERCAN_SRC="${MERCAN_SRC:-$ROOT/.native-work/MercanRuntime}"
 MERCAN_JOBS="${MERCAN_JOBS:-2}"
 if [[ "${MERCAN_USE_LOCAL_SOURCE:-0}" == "1" ]]; then
@@ -46,6 +46,11 @@ cmake -S "$MERCAN_SRC" -B "$SHARED_BUILD" \
 cmake --build "$SHARED_BUILD" --target libmercan mercan -j "$MERCAN_JOBS"
 LIB="$SHARED_BUILD/libmercan.so"
 test -s "$LIB"
+NEDO_BUILD="${MERCAN_NEDO_BUILD_DIR:-$MERCAN_SRC/build/ethosoftlib-nedo}"
+cargo build --locked --release --lib --jobs "$MERCAN_JOBS" \
+  --manifest-path "$MERCAN_SRC/runtime/nedo004-ffi/Cargo.toml" --target-dir "$NEDO_BUILD"
+"${MERCAN_PYTHON:-python3}" "$ROOT/scripts/stage_nedo_native.py" \
+  --runtime-source "$MERCAN_SRC" --library "$NEDO_BUILD/release/libnedo004_ffi.so"
 TARGET="$ROOT/src/ethosoftlib/mercan/lib"
 mkdir -p "$TARGET"
 STAGED_LIBRARY="$(mktemp "$TARGET/.libmercan.XXXXXX")"

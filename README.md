@@ -33,7 +33,8 @@ with Model.from_pretrained("MercanAI/Mercan-0.8B-SFT") as model:
 A **compatible libmercan shared library** is required to execute this code.
 On Linux, build and stage one using `bash scripts/build_mercan_native_linux.sh`,
 or set `ETHOSOFT_MERCAN_LIBRARY=/absolute/path/to/libmercan.so`.
-EthosoftLib does not automatically download or install executable native code.
+Platform wheels carry prebuilt native libraries. Importing the SDK performs
+no compilation or additional executable downloads.
 See [Mercan Python guide](docs/MERCAN_PYTHON.md) for step-by-step setup,
 CPU/CUDA options, ChatML, cache, native packaging and current limitations.
 
@@ -42,13 +43,17 @@ For agent frameworks, `model.generate(messages, ...)` and
 message lists without inserting a system prompt or changing chat history.
 This is the recommended integration boundary for independent agent roles.
 
-EthosoftLib 0.7.0 uses MercanRuntime 0.3.0's generation and device API v1.
+EthosoftLib 0.8.0 uses MercanRuntime 0.4.0's generation, device and session API v1.
 `device="auto"` selects usable CUDA or CPU; `device="cuda"` fails clearly
 if the loaded library lacks CUDA or no CUDA device is available.
 `model.info()` reports actual device placement.
 The C++ engine owns chat formatting, sampling and the complete generation loop;
-CLI and Python share the same engine. Streaming and async task cancellation
-release the native request/context before returning.
+CLI and Python share the same engine. Cancelling or closing an incomplete
+stream joins native work and releases its touched context before returning.
+Successful chat turns retain a native context and reuse its KV token prefix.
+`model.session()` creates independent conversations sharing weights;
+`reset_history()` clears both history and cache. Failed or interrupted turns
+discard their cache. Native CPU/CUDA wheels also bundle standalone NedoTokenizer.
 
 ## Provider-neutral SDK
 

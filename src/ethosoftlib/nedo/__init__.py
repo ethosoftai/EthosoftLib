@@ -35,9 +35,10 @@ def _load_library(library_path: str | os.PathLike[str] | None = None) -> C.CDLL:
             candidates.append(system)
     if not candidates:
         raise NedoLibraryNotFound(
-            "Standalone NedoTokenizer library not found; build "
-            "MercanRuntime/runtime/nedo004-ffi with cargo, then set "
-            "ETHOSOFT_NEDO_LIBRARY or pass library_path=."
+            "Standalone NedoTokenizer library not found. Install a platform-native "
+            "EthosoftLib wheel containing NedoTokenizer, or build "
+            "MercanRuntime/runtime/nedo004-ffi and set ETHOSOFT_NEDO_LIBRARY "
+            "or pass library_path=."
         )
     failures = []
     for name in candidates:
