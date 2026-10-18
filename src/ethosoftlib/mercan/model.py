@@ -7,7 +7,8 @@ import asyncio
 import codecs
 from pathlib import Path
 import os
-import random
+import math
+from concurrent.futures import TimeoutError as FutureTimeout
 from threading import Event
 from time import perf_counter
 from threading import RLock
@@ -25,6 +26,8 @@ class Model:
     The transcript is retained between calls, but native KV cache reuse is not
     yet implemented across turns. Always close the model when done.
     """
+
+    NATIVE_GENERATION_API_VERSION = 1
 
     def __init__(
         self, runtime: MercanRuntime, model: MercanModel, model_path: Path, *,
@@ -100,6 +103,7 @@ class Model:
         runtime = MercanRuntime(library_path=library_path)
         model = None
         try:
+            runtime.require_generation_api()
             for plugin in plugins:
                 runtime.load_plugin(plugin)
             model = runtime.load_model(path, gpu_layers=gpu_layers,
@@ -140,10 +144,14 @@ class Model:
             raise ValueError("max_tokens must be >= 1")
         if not isinstance(repeat_last_n, int) or repeat_last_n < 0:
             raise ValueError("repeat_last_n must be >= 0")
-        from .sampling import sample_token
-        sample_token([0.0], 1, temperature=temperature, top_k=top_k,
-                     top_p=top_p, repeat_penalty=repeat_penalty,
-                     rng=random.Random(0))
+        if not math.isfinite(temperature) or temperature < 0:
+            raise ValueError("temperature must be finite and >= 0")
+        if not isinstance(top_k, int) or top_k < 1:
+            raise ValueError("top_k must be >= 1")
+        if not math.isfinite(top_p) or not 0 < top_p <= 1:
+            raise ValueError("top_p must be in (0, 1]")
+        if not math.isfinite(repeat_penalty) or repeat_penalty <= 0:
+            raise ValueError("repeat_penalty must be finite and > 0")
 
     def stream_chat(
         self, prompt: str, *, temperature: float = 0.7,
@@ -198,61 +206,40 @@ class Model:
         repeat_penalty: float = 1.15, repeat_last_n: int = 64,
         seed: int | None = None, stop_event: Event | None = None,
     ) -> Iterator[str]:
-        """Yield UTF-8-safe fragments without changing chat history.
+        """Stream the common native chat engine without changing history.
 
-        Set stop_event or close the iterator to stop generation. Cancellation
-        is cooperative between decode calls; an in-flight decode is completed.
+        C++ owns formatting, prefill, sampling, stop handling and decode.
+        Closing the iterator cancels and joins the native worker before freeing
+        its context. In-flight device operations finish before cancellation.
         """
         self._validate_generation(
             "messages", temperature=temperature, max_tokens=max_tokens,
             top_k=top_k, top_p=top_p, repeat_penalty=repeat_penalty,
             repeat_last_n=repeat_last_n,
         )
-        formatted = format_chat(messages, **self._role_options)
+        if not messages:
+            raise ValueError("At least one message is required")
         with self._lock:
             self._check()
             if stop_event is not None and stop_event.is_set():
                 return
-            prompt_tokens = self._model.tokenize(formatted, parse_special=True)
-            if not prompt_tokens:
-                raise MercanError("Prompt produced no tokens")
-            stop_ids = {self._model.eos_token, self._model.pad_token}
-            for marker in ("<|im_start|>", "<|im_end|>"):
-                single = self._model.tokenize(marker, parse_special=True)
-                if len(single) == 1:
-                    stop_ids.add(single[0])
-
-            rng = random.Random(seed)
             decoder = codecs.getincrementaldecoder("utf-8")("replace")
-            with self._model.context(**self._context_options) as context:
-                if len(prompt_tokens) + max_tokens > context.size:
-                    raise ValueError(
-                        f"Prompt ({len(prompt_tokens)} tokens) + max_tokens "
-                        f"({max_tokens}) exceeds n_ctx={context.size}"
-                    )
-                context.decode(prompt_tokens)
-                recent = list(prompt_tokens[-repeat_last_n:]) if repeat_last_n else []
-                for index in range(max_tokens):
-                    if stop_event is not None and stop_event.is_set():
-                        return
-                    next_token = context.sample_token(
-                        temperature=temperature, top_k=top_k, top_p=top_p,
-                        repeat_penalty=repeat_penalty, recent_tokens=recent, rng=rng,
-                    )
-                    if next_token in stop_ids:
-                        break
-                    piece = decoder.decode(self._model.token_to_bytes(next_token))
-                    if piece:
-                        yield piece
-                    if repeat_last_n:
-                        recent.append(next_token)
-                        if len(recent) > repeat_last_n:
-                            del recent[0]
-                    if index + 1 < max_tokens:
-                        context.decode([next_token])
-                tail = decoder.decode(b"", final=True)
-                if tail:
-                    yield tail
+            with self._model.generation(
+                messages=messages, context_options=self._context_options,
+                role_options=self._role_options, max_tokens=max_tokens,
+                temperature=temperature, top_k=top_k, top_p=top_p,
+                repeat_penalty=repeat_penalty, repeat_last_n=repeat_last_n,
+                seed=seed,
+            ) as request:
+                with closing(request.stream(stop_event)) as stream:
+                    for raw in stream:
+                        piece = decoder.decode(raw)
+                        if piece:
+                            yield piece
+                if not request.cancelled:
+                    tail = decoder.decode(b"", final=True)
+                    if tail:
+                        yield tail
 
     def chat(
         self, prompt: str, *, temperature: float = 0.7,
@@ -268,8 +255,12 @@ class Model:
         ))
 
     async def async_chat(self, prompt: str, **kwargs: object) -> str:
-        """Run blocking native generation in a worker thread."""
-        return await asyncio.to_thread(self.chat, prompt, **kwargs)
+        """Collect the async stream; task cancellation also cancels native work."""
+        stream = self.astream_chat(prompt, **kwargs)
+        try:
+            return "".join([part async for part in stream])
+        finally:
+            await stream.aclose()
 
     async def astream_chat(self, prompt: str, **kwargs: object):
         """Yield an async stream without blocking the caller's event loop.
@@ -278,19 +269,30 @@ class Model:
         signals cancellation and avoids recording incomplete chat history.
         """
         loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue()
+        queue: asyncio.Queue[tuple[str, object]] = asyncio.Queue(maxsize=1)
         stop = Event()
+
+        def emit(item):
+            future = asyncio.run_coroutine_threadsafe(queue.put(item), loop)
+            while not stop.is_set():
+                try:
+                    future.result(timeout=0.05)
+                    return True
+                except FutureTimeout:
+                    pass
+            future.cancel()
+            return False
 
         def worker() -> None:
             try:
-                for chunk in self.stream_chat(prompt, _stop_event=stop, **kwargs):
-                    if stop.is_set():
-                        break
-                    loop.call_soon_threadsafe(queue.put_nowait, ("chunk", chunk))
+                with closing(self.stream_chat(prompt, _stop_event=stop, **kwargs)) as stream:
+                    for chunk in stream:
+                        if not emit(("chunk", chunk)):
+                            break
             except BaseException as exc:
-                loop.call_soon_threadsafe(queue.put_nowait, ("error", exc))
+                emit(("error", exc))
             finally:
-                loop.call_soon_threadsafe(queue.put_nowait, ("done", None))
+                emit(("done", None))
 
         task = asyncio.create_task(asyncio.to_thread(worker))
         try:
@@ -313,6 +315,7 @@ class Model:
                 "path": str(self.model_path),
                 "file_bytes": self.model_path.stat().st_size,
                 "runtime_version": self._runtime.version,
+                "generation_engine": "native-v1",
                 "architecture": self._model.architecture,
                 "tokenizer": self._model.tokenizer,
                 "vocab_size": self._model.vocab_size,

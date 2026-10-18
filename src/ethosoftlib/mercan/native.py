@@ -37,6 +37,49 @@ class ContextParams(C.Structure):
     ]
 
 
+class GenerationParams(C.Structure):
+    _fields_ = [
+        ("struct_size", C.c_uint32), ("max_tokens", C.c_int32),
+        ("temperature", C.c_float), ("top_k", C.c_int32),
+        ("top_p", C.c_float), ("repeat_penalty", C.c_float),
+        ("repeat_last_n", C.c_int32), ("seed", C.c_uint32),
+        ("use_seed", C.c_uint32),
+    ]
+
+
+class ChatMessage(C.Structure):
+    _fields_ = [("role", C.c_char_p), ("content", C.c_char_p),
+                ("content_len", C.c_size_t)]
+
+
+GenerationCallback = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_size_t, C.c_void_p)
+
+
+def bind_generation_api(library: C.CDLL) -> None:
+    """Bind the versioned native generation engine, with no Python fallback."""
+    if not hasattr(library, "mercan_generation_api_version"):
+        raise MercanError(
+            "Native generation API v1 is required. Rebuild MercanRuntime >=0.2.0 "
+            "with MERCAN_BUILD_SHARED=ON or install an updated native wheel."
+        )
+    _bind(library, "mercan_generation_api_version", C.c_uint32)
+    _bind(library, "mercan_generation_params_size_v1", C.c_size_t)
+    if (library.mercan_generation_api_version() != 1
+            or library.mercan_generation_params_size_v1() != C.sizeof(GenerationParams)):
+        raise MercanError("Incompatible libmercan generation API/layout")
+    ptr = C.c_void_p
+    _bind(library, "mercan_generation_default_params_v1", C.c_int,
+          C.POINTER(GenerationParams), C.c_size_t)
+    _bind(library, "mercan_generate_begin_v1", ptr, ptr, C.c_char_p, C.c_size_t,
+          ContextParams, C.POINTER(GenerationParams))
+    _bind(library, "mercan_chat_begin_v1", ptr, ptr, C.POINTER(ChatMessage), C.c_size_t,
+          C.c_char_p, C.c_char_p, C.c_char_p, ContextParams, C.POINTER(GenerationParams))
+    _bind(library, "mercan_generation_run_v1", C.c_int, ptr, GenerationCallback, ptr)
+    _bind(library, "mercan_generation_cancel_v1", None, ptr)
+    _bind(library, "mercan_generation_finish_reason_v1", C.c_int, ptr)
+    _bind(library, "mercan_generation_free_v1", None, ptr)
+
+
 def load_library(path: str | os.PathLike[str] | None = None) -> C.CDLL:
     """Load explicit, package-bundled, then system native library."""
     explicit = path or os.environ.get("ETHOSOFT_MERCAN_LIBRARY") or os.environ.get("MERCAN_LIBRARY_PATH")

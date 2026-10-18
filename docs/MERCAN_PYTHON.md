@@ -16,6 +16,11 @@ the Mercan CLI. Use a compatible shared libmercan via
 `ETHOSOFT_MERCAN_LIBRARY=/path/to/libmercan.so`, or a platform wheel built
 with a staged native payload.
 
+EthosoftLib 0.6.0 requires MercanRuntime 0.2.0+ with generation API v1 for
+`Model.generate`, `chat` and streaming. Older libraries can still serve the
+low-level bindings, but high-level generation reports a clear upgrade error.
+There is no automatic fallback to a Python token generation loop.
+
 ```python
 from ethosoftlib.mercan import Model
 
@@ -48,7 +53,7 @@ the transcript. Chat history and async streaming work; across-turn KV cache
 reuse is not yet implemented.
 Context length is bounded; excessive histories raise a useful error.
 
-### Application-owned messages (0.5.1)
+### Application-owned messages (native engine in 0.6.0)
 
 Use `generate` / `stream_generate` when your application owns the transcript,
 or when one model serves multiple independent agent roles:
@@ -69,13 +74,25 @@ with Model.from_pretrained("/models/model.mercan") as model:
 ```
 
 These methods neither read nor modify `model.history` and never insert a
-default system prompt. They share the generation engine with `chat`.
+default system prompt. They share the C++ generation engine with `chat` and
+the Mercan CLI: chat formatting, prefill, sampling, stop detection and token
+decode all execute in `libmercan`. Python only marshals messages and decodes
+the streamed UTF-8 bytes. `model.info()['generation_engine']` is `native-v1`.
 `stream_generate` accepts the same sampling options as `chat`, plus an optional
 `threading.Event` named `stop_event`. Cancellation is checked between native
 decode calls. Close partially consumed iterators to release their context.
 `role_system`, `role_user`, `role_assistant` and `threads_batch` can be supplied
 when loading a model. `plugins` are loaded before model loading; `use_mmap`
 and `check_tensors` configure loading.
+
+The native repetition policy follows the CLI: penalize each distinct token
+once within the recent generated-output window, exclude prompt tokens, and
+exempt stop tokens. This replaces the older Python high-level sampler's
+per-occurrence/prompt penalty. The standalone low-level `sampling.py` helper
+retains its historical behavior for custom decode experiments; model-level
+generation does not call it. Seed values must fit an unsigned 32-bit integer.
+Use matching explicit messages/headers/options to compare CLI and SDK output;
+their application-level default system prompts are independent.
 
 Native builds exposing ABI queries are checked for ABI version 1 and exact
 parameter struct sizes before struct-returning/passing functions are used.
@@ -158,7 +175,10 @@ The stream uses an incremental UTF-8 decoder, so Turkish characters split
 between native token pieces are emitted intact. Incomplete streams do
 not append a partial assistant response to conversation history.
 All async generation runs on a worker thread so the event loop is not
-blocked by native inference. Do not close a model while a generation is
+blocked by native inference. Output queues are bounded, and cancelling
+`async_chat` or closing a stream cancels and joins native work before releasing
+the request/context. Cancellation cannot interrupt an in-flight decode.
+Do not close a model while a generation is
 active; serialize concurrent calls per model.
 
 `model.info()` provides the C ABI runtime version, architecture, tokenizer,

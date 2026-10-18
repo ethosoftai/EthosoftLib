@@ -30,6 +30,29 @@ class FakeContext:
     def __exit__(self, *args):
         self.closed = True
 
+
+class FakeRequest:
+    cancelled = False
+
+    def __init__(self, model, max_tokens):
+        self.model, self.max_tokens = model, max_tokens
+        self.closed = False
+
+    def stream(self, stop_event=None):
+        for token in self.model.tokens[:self.max_tokens]:
+            if stop_event is not None and stop_event.is_set():
+                self.cancelled = True
+                return
+            if token == 8:
+                break
+            yield self.model.token_to_bytes(token)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.closed = True
+
 class FakeModel:
     eos_token = 9
     pad_token = 10
@@ -56,6 +79,11 @@ class FakeModel:
         ctx = FakeContext(self)
         self.contexts.append(ctx)
         return ctx
+
+    def generation(self, *, max_tokens, **kwargs):
+        request = FakeRequest(self, max_tokens)
+        self.contexts.append(request)
+        return request
 
     def close(self):
         self.closed = True

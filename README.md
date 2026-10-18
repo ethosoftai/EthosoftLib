@@ -42,6 +42,11 @@ For agent frameworks, `model.generate(messages, ...)` and
 message lists without inserting a system prompt or changing chat history.
 This is the recommended integration boundary for independent agent roles.
 
+From 0.6.0, these calls use MercanRuntime 0.2.0's native generation API v1.
+The C++ engine owns chat formatting, sampling and the complete generation loop;
+CLI and Python share the same engine. Streaming and async task cancellation
+release the native request/context before returning.
+
 ## Provider-neutral SDK
 
 ```python

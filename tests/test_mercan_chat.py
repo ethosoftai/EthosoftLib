@@ -30,6 +30,28 @@ class FakeContext:
         pass
 
 
+class FakeRequest:
+    cancelled = False
+
+    def __init__(self, max_tokens):
+        self.max_tokens = max_tokens
+        self.closed = False
+
+    def stream(self, stop_event=None):
+        if stop_event is not None and stop_event.is_set():
+            self.cancelled = True
+            return
+        yield "İyiyim!".encode()
+        if stop_event is not None and stop_event.is_set():
+            self.cancelled = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.closed = True
+
+
 class FakeLowLevelModel:
     eos_token = 9
     pad_token = 10
@@ -55,6 +77,14 @@ class FakeLowLevelModel:
         context = FakeContext(self)
         self.contexts.append(context)
         return context
+
+    def generation(self, *, messages, max_tokens, role_options, **kwargs):
+        if max_tokens >= 4096:
+            raise ValueError("max_tokens exceeds n_ctx")
+        self.prompts.append(format_chat(messages, **role_options))
+        request = FakeRequest(max_tokens)
+        self.contexts.append(request)
+        return request
 
     def close(self):
         self.closed = True

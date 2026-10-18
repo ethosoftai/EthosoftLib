@@ -60,6 +60,7 @@ jobs:
       - name: Native end-to-end model chat
         env:
           ETHOSOFT_MERCAN_LIBRARY: ${{ github.workspace }}/src/ethosoftlib/mercan/lib/libmercan.so
+          MERCAN_TEST_CLI: ${{ github.workspace }}/.native-work/MercanRuntime/build/ethosoftlib-shared/mercan
         run: |
           export ETHOSOFT_MERCAN_TEST_MODEL="$(cat native_model_path.txt)"
           python -m pytest -q tests/test_mercan_integration_contract.py
@@ -86,6 +87,7 @@ jobs:
           env -u ETHOSOFT_MERCAN_LIBRARY -u MERCAN_LIBRARY_PATH /tmp/mercan-wheel-venv/bin/python - <<'PY'
           from ethosoftlib.mercan import MercanRuntime
           with MercanRuntime() as runtime:
+              runtime.require_generation_api()
               print("Installed native wheel runtime version:", runtime.version)
           PY
       - name: Upload tested native Linux wheel

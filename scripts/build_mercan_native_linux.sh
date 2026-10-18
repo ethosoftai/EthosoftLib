@@ -3,7 +3,7 @@
 # Uses pinned MercanRuntime source; only run on trusted Linux build workers.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MERCAN_REF="${MERCAN_REF:-f8c8414845dcf52ad1344a477c1cc88ade83c595}"
+MERCAN_REF="${MERCAN_REF:-8219e2c2a6ec062b4ea2ae2a19c59724ec402265}"
 MERCAN_SRC="${MERCAN_SRC:-$ROOT/.native-work/MercanRuntime}"
 MERCAN_JOBS="${MERCAN_JOBS:-2}"
 if [[ "${MERCAN_USE_LOCAL_SOURCE:-0}" == "1" ]]; then
@@ -32,12 +32,15 @@ cmake -S "$MERCAN_SRC" -B "$SHARED_BUILD" \
   -DGGML_NATIVE=OFF \
   -DGGML_CUDA="${MERCAN_CUDA:-OFF}" \
   -DMERCAN_BUILD_SDK_TESTS=ON
-cmake --build "$SHARED_BUILD" --target libmercan -j "$MERCAN_JOBS"
+cmake --build "$SHARED_BUILD" --target libmercan mercan -j "$MERCAN_JOBS"
 LIB="$SHARED_BUILD/libmercan.so"
 test -s "$LIB"
 TARGET="$ROOT/src/ethosoftlib/mercan/lib"
 mkdir -p "$TARGET"
-cp "$LIB" "$TARGET/libmercan.so"
+STAGED_LIBRARY="$(mktemp "$TARGET/.libmercan.XXXXXX")"
+cp "$LIB" "$STAGED_LIBRARY"
+chmod 755 "$STAGED_LIBRARY"
+mv -f "$STAGED_LIBRARY" "$TARGET/libmercan.so"
 echo "Staged native library at $TARGET/libmercan.so"
 echo "Build the platform wheel with: python -m build --wheel"
 echo "Audit/relabel external runtime dependencies before public distribution."

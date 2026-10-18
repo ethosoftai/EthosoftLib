@@ -1,4 +1,8 @@
-"""Python sampler matching Mercan CLI's top-k, top-p and repetition policy."""
+"""Legacy low-level Python sampling utility for custom decode experiments.
+
+Model.generate/chat use the native C++ sampler, never this helper. This older
+utility retains its historical per-occurrence repetition behavior.
+"""
 from __future__ import annotations
 
 from collections import Counter
@@ -36,7 +40,7 @@ def sample_token(
         if math.isnan(value):
             return float("-inf")
         if counts[i] and repeat_penalty != 1.0:
-            # Mercan CLI applies the penalty once per occurrence.
+            # Preserve the historical behavior of this standalone utility.
             factor = repeat_penalty ** counts[i]
             value = value / factor if value > 0 else value * factor
         return value

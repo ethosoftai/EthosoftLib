@@ -7,7 +7,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Sequence
 
-from .native import bind_api, load_library, native_error, MercanError
+from .native import bind_api, bind_generation_api, load_library, native_error, MercanError
 
 # Mercan's native backend uses process-global initialization.
 _BACKEND_LOCK = RLock()
@@ -39,6 +39,11 @@ class MercanRuntime:
     def _check(self) -> None:
         if self._closed:
             raise MercanError("MercanRuntime has been closed")
+
+    def require_generation_api(self) -> None:
+        """Fail before model loading if this library lacks generation API v1."""
+        self._check()
+        bind_generation_api(self._lib)
 
     def load_model(
         self, path: str | os.PathLike[str], *, gpu_layers: int | None = None,
@@ -212,12 +217,17 @@ class MercanModel:
             capacity = -count if count < 0 else count + 1
         raise native_error(self._runtime._lib, "Token piece buffer sizing failed")
 
-    def context(
+    def _context_params(
         self, *, n_ctx: int | None = None, n_batch: int | None = None,
         threads: int | None = None,
         threads_batch: int | None = None,
-    ) -> MercanContext:
+    ):
         self._check()
+        for name, value in dict(n_ctx=n_ctx, n_batch=n_batch, threads=threads,
+                                threads_batch=threads_batch).items():
+            minimum = 1 if name in ("n_ctx", "n_batch") else 0
+            if value is not None and (not isinstance(value, int) or not minimum <= value <= 2147483647):
+                raise ValueError(f"{name} must be in {minimum}..2147483647")
         p = self._runtime._lib.mercan_context_default_params()
         if n_ctx is not None:
             p.n_ctx = n_ctx
@@ -230,40 +240,36 @@ class MercanModel:
             p.n_threads_batch = threads_batch
         if not p.n_ctx or not p.n_batch:
             raise ValueError("n_ctx and n_batch must be positive")
+        return p
+
+    def context(
+        self, *, n_ctx: int | None = None, n_batch: int | None = None,
+        threads: int | None = None, threads_batch: int | None = None,
+    ) -> MercanContext:
+        p = self._context_params(n_ctx=n_ctx, n_batch=n_batch, threads=threads,
+                                 threads_batch=threads_batch)
         handle = self._runtime._lib.mercan_context_create(self._handle, p)
         if not handle:
             raise native_error(self._runtime._lib, "Could not create Mercan context")
         self._contexts += 1
         return MercanContext(self, handle, int(p.n_batch), p)
 
+    def generation(self, **options):
+        """Create an owned request for the native generation API v1."""
+        from .generation import NativeGeneration
+        return NativeGeneration(self, **options)
+
     def generate(
         self, prompt: str, *, max_new_tokens: int = 128,
         n_ctx: int | None = None,
     ) -> str:
-        """Basic deterministic greedy generation from an already formatted prompt.
-
-        Callers must supply the correct model chat template where applicable.
-        Sampling, chat history management, streaming, and HF downloads are
-        intentionally separate future conveniences, not generic SDK primitives.
-        """
-        if max_new_tokens < 1:
-            raise ValueError("max_new_tokens must be >= 1")
-        tokens = self.tokenize(prompt, parse_special=True)
-        if not tokens:
-            raise ValueError("Prompt did not yield any tokens")
-        output = bytearray()
-        with self.context(n_ctx=n_ctx) as context:
-            if len(tokens) + max_new_tokens > context.size:
-                raise ValueError("Prompt + max_new_tokens exceeds context size")
-            context.decode(tokens)
-            for idx in range(max_new_tokens):
-                token = context.greedy_token()
-                if token == self.eos_token or token == self.pad_token:
-                    break
-                output.extend(self.token_to_bytes(token))
-                if idx + 1 < max_new_tokens:
-                    context.decode([token])
-        return output.decode("utf-8", "replace")
+        """Greedy generation from a preformatted prompt using the native loop."""
+        from contextlib import closing
+        with self.generation(prompt=prompt, max_tokens=max_new_tokens,
+                             temperature=0, repeat_penalty=1.0,
+                             context_options={"n_ctx": n_ctx}) as request:
+            with closing(request.stream()) as stream:
+                return b"".join(stream).decode("utf-8", "replace")
 
     def close(self) -> None:
         if not self._handle:
