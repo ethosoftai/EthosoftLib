@@ -67,6 +67,8 @@ def test_real_native_stream_info_and_kv_reset():
                                               temperature=0)) == stateless
         assert model.history == ()
         info = model.info()
+        assert info["device"] == "cpu"
+        assert info["placement"]["placement"] == "cpu"
         assert info["architecture"] == "nedolm"
         assert info["vocab_size"] == 32000
 
@@ -91,6 +93,35 @@ def test_real_native_stream_info_and_kv_reset():
             assert context.tokens_used == 0
             context.decode(tokens)
             assert context.greedy_token() == first
+
+
+@requires_native
+@pytest.mark.parametrize("device,layers", [("cpu", None), ("auto", None), ("cuda", None), ("cuda", 1)])
+def test_native_device_selection_and_actual_placement(device, layers):
+    from ethosoftlib.mercan import MercanRuntime, Model, MercanError
+    library = os.environ["ETHOSOFT_MERCAN_LIBRARY"]
+    with MercanRuntime(library_path=library) as runtime:
+        caps = runtime.capabilities()
+    usable = caps["cuda_compiled"] and caps["cuda_available"]
+    path = os.environ["ETHOSOFT_MERCAN_TEST_MODEL"]
+    if device == "cuda" and not usable:
+        with pytest.raises(MercanError, match="CUDA requested"):
+            Model.from_pretrained(path, library_path=library, device=device, gpu_layers=layers)
+        return
+    expected = "cpu" if device == "cpu" or not usable else "cuda"
+    with Model.from_pretrained(path, library_path=library, device=device, gpu_layers=layers,
+                               threads=2, n_ctx=1024) as model:
+        info = model.info()
+        assert info["device"] == expected
+        placement = info["placement"]
+        if layers is not None:
+            assert placement["gpu_layers_requested"] == layers
+        if expected == "cpu":
+            assert placement["placement"] == "cpu"
+        else:
+            assert placement["placement"] in ("gpu", "mixed")
+        assert any(d["backend"] == ("CPU" if expected == "cpu" else "CUDA") for d in placement["devices"])
+        assert model.chat("Merhaba, nasılsın?", temperature=0, max_tokens=8).strip()
 
 
 @requires_native

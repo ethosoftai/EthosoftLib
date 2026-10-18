@@ -30,6 +30,7 @@ with tempfile.TemporaryDirectory() as directory:
         "assert t.decode(t.encode(s)) == s; "
         "with_runtime=MercanRuntime(); "
         "with_runtime.require_generation_api(); "
+        "assert with_runtime.capabilities()['api_version'] == 1; "
         "assert with_runtime.version; "
         "print('libmercan:', with_runtime.version, 'Nedo SHA:', t.vocab_sha256); "
         "with_runtime.close()"

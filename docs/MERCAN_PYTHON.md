@@ -16,8 +16,8 @@ the Mercan CLI. Use a compatible shared libmercan via
 `ETHOSOFT_MERCAN_LIBRARY=/path/to/libmercan.so`, or a platform wheel built
 with a staged native payload.
 
-EthosoftLib 0.6.0 requires MercanRuntime 0.2.0+ with generation API v1 for
-`Model.generate`, `chat` and streaming. Older libraries can still serve the
+EthosoftLib 0.7.0 requires MercanRuntime 0.3.0+ with generation and device API v1 for
+`Model.from_pretrained`, `generate`, `chat` and streaming. Older libraries can still serve the
 low-level bindings, but high-level generation reports a clear upgrade error.
 There is no automatic fallback to a Python token generation loop.
 
@@ -37,10 +37,33 @@ with Model.from_pretrained("MercanAI/Mercan-0.8B-SFT") as model:
 file downloader. For repeatable builds, pin `revision` to a commit SHA.
 There are no automatic downloads of executables or DLLs.
 
-`device='auto'` deliberately starts on CPU, unless the user sets
-`ETHOSOFT_MERCAN_GPU_LAYERS`; `device='cuda'` requests all layers on the
-GPU, and requires an appropriately built native runtime.
-`gpu_layers` overrides offload count.
+`device='auto'` uses CUDA when the loaded native library supports it and a
+usable CUDA device is visible, otherwise CPU. `device='cpu'` forces CPU.
+`device='cuda'` requires both a CUDA build (`GGML_CUDA=ON`) and a usable
+device; missing support raises an explicit error before model download.
+Allocation or model-load failures also propagate; they do not retry on CPU.
+`gpu_layers=-1` offloads all supported layers, a positive count requests
+partial offload, and `0` forces CPU with `auto`. Combining `cuda` with `0`,
+or `cpu` with a nonzero count, is an error. Generic plugin architectures
+currently offload the entire model for any nonzero count.
+`ETHOSOFT_MERCAN_GPU_LAYERS` applies only to `auto` without explicit
+`gpu_layers`; a nonzero value is a strict CUDA request.
+
+```python
+from ethosoftlib.mercan import MercanRuntime, Model
+
+with MercanRuntime(library_path="/path/to/libmercan.so") as runtime:
+    print(runtime.capabilities())  # cuda_compiled, cuda_available, backends, devices
+
+with Model.from_pretrained("/models/model.mercan", device="auto") as model:
+    print(model.info()["device"])     # cpu or cuda, from loaded weight buffers
+    print(model.info()["placement"])  # cpu/gpu/mixed and actual device names
+```
+
+CUDA offload may retain CPU weights or operations. `placement` describes
+weight ownership; it does not claim that every operation runs on the GPU.
+An explicit `library_path` or library environment variable is authoritative.
+A CPU wheel remains a CPU build even on a machine with an NVIDIA GPU.
 
 `chat` accepts `temperature`, `top_k`, `top_p`, `repeat_penalty`,
 `repeat_last_n`, `seed`, `max_tokens` and `save_history`.
@@ -129,7 +152,23 @@ Local mode requires an already prepared patched llama.cpp under
 `build/_deps/llama-src`, or at `MERCAN_LLAMA_DIR`. It builds in
 `build/ethosoftlib-shared` (`MERCAN_SHARED_BUILD_DIR` overrides this) and stages
 the resulting `.so` in the Python package. It does not run `prepare_llama.sh`.
-`MERCAN_CUDA=ON` requests a CUDA build when the toolkit is available.
+`MERCAN_CUDA=ON` requests a CUDA build in a separate
+`build/ethosoftlib-shared-cuda` directory and stages that build instead of
+the CPU payload. It requires the NVIDIA CUDA Toolkit (`nvcc`, headers and
+cuBLAS). Point `CUDACXX` and `CUDAToolkit_ROOT` to a nonstandard toolkit.
+`MERCAN_CUDA_ARCHITECTURES` can set CMake's target architectures (for example
+`89` for a local Ada GPU); choose the required architectures for distribution.
+
+```bash
+MERCAN_CUDA=ON bash scripts/build_mercan_native_linux.sh
+# Verify compiled support separately from device availability:
+.native-work/MercanRuntime/build/ethosoftlib-shared-cuda/mercan devices
+```
+
+CUDA wheels additionally require compatible CUDA runtime/cuBLAS libraries
+and an NVIDIA driver on the target system. The build script does not bundle
+or install those dependencies. Keep CPU and CUDA wheel outputs separate;
+they have the same package name/version and are alternative builds.
 
 A fresh environment running the standard unit tests does not require native
 Mercan. The `Mercan native Linux model smoke` GitHub Actions workflow also
@@ -219,8 +258,9 @@ Native wheels are tagged `py3-none-<platform>` since the underlying Rust/C++
 shared libraries use `ctypes` and do not depend on the CPython extension ABI.
 These GitHub Actions artifacts are **not** yet PyPI releases. Linux wheels
 must be manylinux-audited/repaired before official publication. GPU-enabled
-CUDA and Metal builds need separate distribution verification. Device auto
-currently remains CPU-first by design.
+CUDA and Metal builds need separate distribution verification. Automatic
+selection currently covers CUDA and CPU; other backends remain available
+through the low-level native API's explicit offload parameters.
 
 The Python base remains free of mandatory dependencies and does not compile
 or download executable native code during `pip install` for the pure wheel.

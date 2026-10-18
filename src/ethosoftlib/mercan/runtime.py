@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import ctypes as C
+import json
 import os
 from pathlib import Path
 from threading import RLock
 from typing import Sequence
 
-from .native import bind_api, bind_generation_api, load_library, native_error, MercanError
+from .native import bind_api, bind_device_api, bind_generation_api, load_library, native_error, MercanError
 
 # Mercan's native backend uses process-global initialization.
 _BACKEND_LOCK = RLock()
@@ -45,11 +46,59 @@ class MercanRuntime:
         self._check()
         bind_generation_api(self._lib)
 
+    def capabilities(self) -> dict[str, object]:
+        """Discover backends compiled into this library and usable devices."""
+        self._check()
+        bind_device_api(self._lib)
+        raw = self._lib.mercan_runtime_devices_json_v1()
+        if not raw:
+            raise native_error(self._lib, "Device discovery failed")
+        return json.loads(raw)
+
+    def select_device(self, device: str = "auto", gpu_layers: int | None = None) -> tuple[str, int]:
+        """Resolve a request before downloading or opening model weights."""
+        self._check()
+        if device not in ("auto", "cpu", "cuda"):
+            raise ValueError("device must be 'auto', 'cpu', or 'cuda'")
+        if device == "auto" and gpu_layers is None:
+            value = os.environ.get("ETHOSOFT_MERCAN_GPU_LAYERS")
+            if value is not None:
+                try:
+                    gpu_layers = int(value)
+                except ValueError as exc:
+                    raise ValueError("ETHOSOFT_MERCAN_GPU_LAYERS must be an integer >= -1") from exc
+        if gpu_layers is not None and (isinstance(gpu_layers, bool) or not isinstance(gpu_layers, int)
+                                      or not -1 <= gpu_layers <= 2147483647):
+            raise ValueError("gpu_layers must be in -1..2147483647")
+        if device == "cpu" and gpu_layers not in (None, 0):
+            raise ValueError("device='cpu' cannot use GPU layers")
+        if device == "cuda" and gpu_layers == 0:
+            raise ValueError("device='cuda' cannot use gpu_layers=0; use device='cpu'")
+        caps = self.capabilities()
+        if device == "cpu" or (device == "auto" and gpu_layers == 0):
+            return "cpu", 0
+        required = device == "cuda" or gpu_layers is not None
+        if required and not caps["cuda_compiled"]:
+            raise MercanError(
+                "CUDA requested but this libmercan was built without CUDA. "
+                "Build with GGML_CUDA=ON and pass library_path to that library, "
+                "or use device='cpu'/'auto'."
+            )
+        if required and not caps["cuda_available"]:
+            raise MercanError("CUDA requested but no usable CUDA device was found. "
+                              "Check the NVIDIA driver and device visibility.")
+        if caps["cuda_compiled"] and caps["cuda_available"]:
+            return "cuda", gpu_layers if gpu_layers is not None else -1
+        return "cpu", 0
+
     def load_model(
         self, path: str | os.PathLike[str], *, gpu_layers: int | None = None,
         use_mmap: bool | None = None, check_tensors: bool | None = None,
+        device: str | None = None,
     ) -> MercanModel:
         self._check()
+        if device is not None:
+            device, gpu_layers = self.select_device(device, gpu_layers)
         model_path = Path(path).expanduser()
         if not model_path.is_file():
             raise FileNotFoundError(f"Mercan model not found: {model_path}")
@@ -60,7 +109,10 @@ class MercanRuntime:
             p.use_mmap = use_mmap
         if check_tensors is not None:
             p.check_tensors = check_tensors
-        handle = self._lib.mercan_model_load(os.fsencode(model_path), p)
+        if device is None:
+            handle = self._lib.mercan_model_load(os.fsencode(model_path), p)
+        else:
+            handle = self._lib.mercan_model_load_device_v1(os.fsencode(model_path), p, device.encode())
         if not handle:
             raise native_error(self._lib, f"Could not load {model_path}")
         self._models += 1
@@ -158,6 +210,20 @@ class MercanModel:
         self._runtime._check()
         if not self._handle:
             raise MercanError("MercanModel has been closed")
+
+    @property
+    def placement(self) -> dict[str, object]:
+        """Actual ownership of model weight buffers, including mixed CPU/GPU use."""
+        self._check()
+        bind_device_api(self._runtime._lib)
+        raw = self._runtime._lib.mercan_model_device_json_v1(self._handle)
+        if not raw:
+            raise native_error(self._runtime._lib, "Model placement query failed")
+        return json.loads(raw)
+
+    @property
+    def device(self) -> str:
+        return str(self.placement["device"])
 
     @property
     def architecture(self) -> str:

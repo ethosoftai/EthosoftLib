@@ -54,6 +54,8 @@ class FakeRequest:
         self.closed = True
 
 class FakeModel:
+    device = "cpu"
+    placement = {"device": "cpu", "placement": "cpu", "devices": [{"name": "CPU", "backend": "CPU"}]}
     eos_token = 9
     pad_token = 10
     architecture = "nedolm"

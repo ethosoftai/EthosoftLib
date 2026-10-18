@@ -80,6 +80,24 @@ def bind_generation_api(library: C.CDLL) -> None:
     _bind(library, "mercan_generation_free_v1", None, ptr)
 
 
+def bind_device_api(library: C.CDLL) -> None:
+    """Require device discovery and verified model placement API v1."""
+    if not hasattr(library, "mercan_device_api_version"):
+        raise MercanError(
+            "Device API v1 is required. Rebuild MercanRuntime >=0.3.0 "
+            "with MERCAN_BUILD_SHARED=ON or install an updated native wheel."
+        )
+    _bind(library, "mercan_device_api_version", C.c_uint32)
+    if library.mercan_device_api_version() != 1:
+        raise MercanError("Incompatible libmercan device API")
+    _bind(library, "mercan_cuda_available_v1", C.c_bool)
+    _bind(library, "mercan_runtime_devices_json_v1", C.c_char_p)
+    _bind(library, "mercan_model_load_device_v1", C.c_void_p,
+          C.c_char_p, ModelParams, C.c_char_p)
+    _bind(library, "mercan_model_device_v1", C.c_char_p, C.c_void_p)
+    _bind(library, "mercan_model_device_json_v1", C.c_char_p, C.c_void_p)
+
+
 def load_library(path: str | os.PathLike[str] | None = None) -> C.CDLL:
     """Load explicit, package-bundled, then system native library."""
     explicit = path or os.environ.get("ETHOSOFT_MERCAN_LIBRARY") or os.environ.get("MERCAN_LIBRARY_PATH")

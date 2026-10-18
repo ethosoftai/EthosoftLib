@@ -28,6 +28,7 @@ class Model:
     """
 
     NATIVE_GENERATION_API_VERSION = 1
+    DEVICE_API_VERSION = 1
 
     def __init__(
         self, runtime: MercanRuntime, model: MercanModel, model_path: Path, *,
@@ -77,36 +78,26 @@ class Model:
     ) -> Model:
         """Load an existing .mercan file or download it from Hugging Face.
 
-        'auto' is conservative CPU-first unless the caller opts into GPU
-        layers through ETHOSOFT_MERCAN_GPU_LAYERS. device='cuda' uses all
-        layers (-1); CUDA requires a CUDA-capable native library.
+        'auto' selects usable CUDA, otherwise CPU. 'cuda' requires a CUDA
+        build and usable device, and never silently falls back to CPU.
+        gpu_layers or ETHOSOFT_MERCAN_GPU_LAYERS can override auto offload.
         """
         if device not in ("auto", "cpu", "cuda"):
             raise ValueError("device must be 'auto', 'cpu', or 'cuda'")
         if not isinstance(system_prompt, str):
             raise TypeError("system_prompt must be a string")
-        if gpu_layers is not None and (not isinstance(gpu_layers, int) or gpu_layers < -1):
-            raise ValueError("gpu_layers must be >= -1")
-        if gpu_layers is None:
-            if device == "cpu":
-                gpu_layers = 0
-            elif device == "cuda":
-                gpu_layers = -1
-            else:
-                gpu_layers = int(os.environ.get("ETHOSOFT_MERCAN_GPU_LAYERS", "0"))
-        if device == "cpu" and gpu_layers != 0:
-            raise ValueError("device='cpu' cannot use GPU layers")
-        path = resolve_model_file(
-            model_id, filename=filename, revision=revision, cache_dir=cache_dir,
-            local_files_only=local_files_only, token=token,
-        )
         runtime = MercanRuntime(library_path=library_path)
         model = None
         try:
             runtime.require_generation_api()
+            device, gpu_layers = runtime.select_device(device, gpu_layers)
+            path = resolve_model_file(
+                model_id, filename=filename, revision=revision, cache_dir=cache_dir,
+                local_files_only=local_files_only, token=token,
+            )
             for plugin in plugins:
                 runtime.load_plugin(plugin)
-            model = runtime.load_model(path, gpu_layers=gpu_layers,
+            model = runtime.load_model(path, device=device, gpu_layers=gpu_layers,
                                        use_mmap=use_mmap, check_tensors=check_tensors)
             return cls(
                 runtime, model, path, system_prompt=system_prompt,
@@ -311,11 +302,14 @@ class Model:
         """Snapshot of metadata already exposed by the native public API."""
         with self._lock:
             self._check()
+            placement = self._model.placement
             return {
                 "path": str(self.model_path),
                 "file_bytes": self.model_path.stat().st_size,
                 "runtime_version": self._runtime.version,
                 "generation_engine": "native-v1",
+                "device": placement["device"],
+                "placement": placement,
                 "architecture": self._model.architecture,
                 "tokenizer": self._model.tokenizer,
                 "vocab_size": self._model.vocab_size,

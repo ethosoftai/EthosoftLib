@@ -4,5 +4,5 @@ Importing ethosoftlib never loads Mercan, native binaries, or third-party SDKs.
 """
 from .core.registry import ProviderInfo, ProviderRegistry, providers
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 __all__ = ["ProviderInfo", "ProviderRegistry", "providers", "__version__"]

@@ -15,7 +15,7 @@ WORK = ROOT / ".native-work"
 MERCAN = WORK / "MercanRuntime"
 LLAMA = MERCAN / "build" / "_deps" / "llama-src"
 MERCAN_COMMIT = os.environ.get(
-    "MERCAN_NATIVE_REF", "8219e2c2a6ec062b4ea2ae2a19c59724ec402265"
+    "MERCAN_NATIVE_REF", "600b322f6c1a3a852ac6141ae99c280dcb956dcf"
 )
 LLAMA_COMMIT = "e71b80510c848c00175924ecf3c40333ccae8eb5"
 

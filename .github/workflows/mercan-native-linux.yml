@@ -88,6 +88,10 @@ jobs:
           from ethosoftlib.mercan import MercanRuntime
           with MercanRuntime() as runtime:
               runtime.require_generation_api()
+              capabilities = runtime.capabilities()
+              assert capabilities["api_version"] == 1
+              assert capabilities["cuda_compiled"] is False
+              assert capabilities["cuda_available"] is False
               print("Installed native wheel runtime version:", runtime.version)
           PY
       - name: Upload tested native Linux wheel
