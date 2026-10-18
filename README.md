@@ -69,6 +69,25 @@ Add other integrations under their own namespaces:
 `ethosoftlib.education`, `ethosoftlib.data`, etc. See
 [architecture guidelines](docs/ARCHITECTURE.md).
 
+## Separation of Powers agent pipeline (`ethosoftlib.sop`)
+
+Yasama (planning), Yurutme (tool execution) and Yargi (answer) roles run as
+separate model calls over any mix of libmercan, Ollama, llama.cpp or the
+`mercan` CLI. Pure Python; speech output is optional:
+
+```bash
+pip install ethosoftlib              # pipeline + CLI
+pip install 'ethosoftlib[sop-speech]'  # optional EMA Lightning voice output
+ethosoftlib-sop --help               # or: python -m ethosoftlib.sop --help
+```
+
+```python
+from ethosoftlib.sop import AgentPipeline, YasamaRuntime, YurutmeRuntime, YargiRuntime
+from ethosoftlib.sop.runtime import LibMercanBackend, OllamaBackend
+```
+
+See [SOP CLI](docs/sop/CLI.md) and [SOP runtime](docs/sop/RUNTIME.md).
+
 ## Math tool-use (`ethosoftlib.math`)
 
 Verified math tool-use toolkit: text -> `<arac_cagrisi>bol(48, 2)</arac_cagrisi><arac_sonucu>24</arac_sonucu>`,

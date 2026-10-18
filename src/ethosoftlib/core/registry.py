@@ -100,3 +100,9 @@ providers.register(
     "tooluse", "math", "ethosoftlib.math:MathToolkit",
     description="Verified math tool-use: text->tool calls, executor and calculator (needs sympy)",
 )
+
+# Yasama/Yurutme/Yargi agent pipeline; backends are chosen by the caller.
+providers.register(
+    "agent", "sop", "ethosoftlib.sop:AgentPipeline",
+    description="Separation of Powers agent pipeline (Yasama/Yurutme/Yargi)",
+)

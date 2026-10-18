@@ -26,10 +26,12 @@ dependencies = []
 hub = ["huggingface_hub>=0.30"]
 math = ["sympy>=1.12"]
 translate = ["sympy>=1.12", "torch", "transformers>=4.33", "sentencepiece"]
+sop-speech = ["ema-lightning", "sounddevice>=0.5"]
 dev = ["pytest>=7", "build>=1.0", "huggingface_hub>=0.30", "sympy>=1.12"]
 
 [project.scripts]
 ethosoftlib-math = "ethosoftlib.math.cli:main"
+ethosoftlib-sop = "ethosoftlib.sop.cli_entry:main"
 
 [project.urls]
 Repository = "https://github.com/ethosoftai/EthosoftLib"

@@ -10,6 +10,7 @@ shared errors, dependency list, release cadence, or registry.
 ethosoftlib
 ├── core/            domain-neutral provider registry and errors
 ├── mercan/          optional MercanRuntime C-ABI binding
+├── sop/             Yasama/Yurutme/Yargi agent pipeline (pure Python)
 └── <future>/        independent services, frameworks or products
 ```
 
