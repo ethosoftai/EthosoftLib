@@ -37,6 +37,11 @@ EthosoftLib does not automatically download or install executable native code.
 See [Mercan Python guide](docs/MERCAN_PYTHON.md) for step-by-step setup,
 CPU/CUDA options, ChatML, cache, native packaging and current limitations.
 
+For agent frameworks, `model.generate(messages, ...)` and
+`model.stream_generate(messages, ...)` accept complete system/user/assistant
+message lists without inserting a system prompt or changing chat history.
+This is the recommended integration boundary for independent agent roles.
+
 ## Provider-neutral SDK
 
 ```python

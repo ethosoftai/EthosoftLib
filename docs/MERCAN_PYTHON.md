@@ -44,9 +44,44 @@ ChatML role headers mirror Mercan CLI: `sistem`, `kullanici`, `asistan`;
 assistant generation stops at EOS, pad, `im_start`, or `im_end`.
 
 Each turn currently recreates the native inference context and replays
-the transcript. Thus, chat history works, but across-turn KV cache reuse
-and async streaming are *not* implemented.
+the transcript. Chat history and async streaming work; across-turn KV cache
+reuse is not yet implemented.
 Context length is bounded; excessive histories raise a useful error.
+
+### Application-owned messages (0.5.1)
+
+Use `generate` / `stream_generate` when your application owns the transcript,
+or when one model serves multiple independent agent roles:
+
+```python
+from contextlib import closing
+from ethosoftlib.mercan import Model
+
+with Model.from_pretrained("/models/model.mercan") as model:
+    messages = [
+        {"role": "system", "content": "Türkçe, kısa cevap ver."},
+        {"role": "user", "content": "Merhaba"},
+    ]
+    print(model.generate(messages, temperature=0, max_tokens=32))
+    with closing(model.stream_generate(messages, max_tokens=32)) as stream:
+        for fragment in stream:
+            print(fragment, end="", flush=True)
+```
+
+These methods neither read nor modify `model.history` and never insert a
+default system prompt. They share the generation engine with `chat`.
+`stream_generate` accepts the same sampling options as `chat`, plus an optional
+`threading.Event` named `stop_event`. Cancellation is checked between native
+decode calls. Close partially consumed iterators to release their context.
+`role_system`, `role_user`, `role_assistant` and `threads_batch` can be supplied
+when loading a model. `plugins` are loaded before model loading; `use_mmap`
+and `check_tensors` configure loading.
+
+Native builds exposing ABI queries are checked for ABI version 1 and exact
+parameter struct sizes before struct-returning/passing functions are used.
+Historical runtime 0.1.2 builds without queries are still supported, but their
+struct layout cannot be checked automatically. Other unversioned builds fail
+with an actionable compatibility error.
 
 ## Build Linux native library / wheel
 
@@ -63,6 +98,21 @@ A staged wheel is **platform-tagged**, never `py3-none-any`.
 This is a developer build pipeline, NOT an audited manylinux PyPI release.
 Inspect bundled dependencies using `ldd` and repair for manylinux using
 auditwheel before distributing across Linux systems.
+
+To use an existing local MercanRuntime checkout without changing its Git
+revision or resetting its prepared llama.cpp dependency:
+
+```bash
+MERCAN_USE_LOCAL_SOURCE=1 \
+MERCAN_SRC=/absolute/path/to/MercanRuntime \
+MERCAN_JOBS=1 bash scripts/build_mercan_native_linux.sh
+```
+
+Local mode requires an already prepared patched llama.cpp under
+`build/_deps/llama-src`, or at `MERCAN_LLAMA_DIR`. It builds in
+`build/ethosoftlib-shared` (`MERCAN_SHARED_BUILD_DIR` overrides this) and stages
+the resulting `.so` in the Python package. It does not run `prepare_llama.sh`.
+`MERCAN_CUDA=ON` requests a CUDA build when the toolkit is available.
 
 A fresh environment running the standard unit tests does not require native
 Mercan. The `Mercan native Linux model smoke` GitHub Actions workflow also

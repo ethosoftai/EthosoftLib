@@ -80,6 +80,7 @@ def bind_api(library: C.CDLL) -> C.CDLL:
     ptr = C.c_void_p
     token_ptr = C.POINTER(C.c_int32)
     _bind(library, "mercan_version", C.c_char_p)
+    _validate_abi(library)
     _bind(library, "mercan_last_error", C.c_char_p)
     _bind(library, "mercan_backend_init", None)
     _bind(library, "mercan_backend_free", None)
@@ -103,6 +104,33 @@ def bind_api(library: C.CDLL) -> C.CDLL:
     _bind(library, "mercan_token_to_piece", C.c_int32, ptr, C.c_int32,
           C.c_void_p, C.c_int32, C.c_bool)
     return library
+
+
+def _validate_abi(library: C.CDLL) -> None:
+    """Check layouts before passing structs by value; retain legacy 0.1.2.
+
+    Legacy builds lack the handshake and cannot have their layout verified.
+    New builds must expose the complete ABI 1 handshake.
+    """
+    names = ("mercan_abi_version", "mercan_model_params_size",
+             "mercan_context_params_size")
+    present = [hasattr(library, name) for name in names]
+    if not any(present):
+        if library.mercan_version() != b"0.1.2":
+            raise MercanError("libmercan has no ABI queries and is not a supported 0.1.2 build")
+        return
+    if not all(present):
+        raise MercanError("libmercan exposes an incomplete ABI handshake")
+    _bind(library, names[0], C.c_uint32)
+    for name in names[1:]:
+        _bind(library, name, C.c_size_t)
+    actual = tuple(getattr(library, name)() for name in names)
+    expected = (1, C.sizeof(ModelParams), C.sizeof(ContextParams))
+    if actual != expected:
+        raise MercanError(
+            f"Incompatible libmercan ABI/layout: got {actual}, expected {expected}. "
+            "Install matching EthosoftLib and MercanRuntime builds."
+        )
 
 
 def native_error(library: C.CDLL, fallback: str) -> MercanError:

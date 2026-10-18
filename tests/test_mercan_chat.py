@@ -98,6 +98,49 @@ def test_chat_and_history_stop_token():
         model.chat("Merhaba")
 
 
+def test_generate_uses_only_explicit_messages_and_preserves_chat_history():
+    model = make_model()
+    model.chat("Stored conversation")
+    history = model.history
+    messages = [{"role": "system", "content": "Yasama sistemi"},
+                {"role": "user", "content": "ACTION seç"}]
+    assert model.generate(messages, temperature=0) == "İyiyim!"
+    prompt = model._model.prompts[-1]
+    assert "Yasama sistemi" in prompt and "ACTION seç" in prompt
+    assert "Stored conversation" not in prompt and "Test sistemi" not in prompt
+    assert model.history == history
+    assert "".join(model.stream_generate(messages, temperature=0)) == "İyiyim!"
+    assert model.history == history
+    with pytest.raises(ValueError, match="message"):
+        model.generate([])
+
+
+def test_generate_cancellation_and_partial_stream_release_context():
+    from threading import Event
+    from contextlib import closing
+    model = make_model()
+    messages = [{"role": "user", "content": "Test"}]
+    stop = Event()
+    stop.set()
+    assert model.generate(messages, stop_event=stop) == ""
+    assert model._model.contexts == []
+    stop.clear()
+    with closing(model.stream_generate(messages, stop_event=stop)) as stream:
+        assert next(stream) == "İyiyim!"
+        stop.set()
+        assert list(stream) == []
+    assert model.history == ()
+
+
+def test_generate_custom_roles_and_independent_calls():
+    model = make_model(role_system="system", role_user="user", role_assistant="assistant")
+    model.generate([{"role": "user", "content": "First role"}])
+    model.generate([{"role": "user", "content": "Second role"}])
+    assert "<|im_start|>user\nSecond role" in model._model.prompts[-1]
+    assert "First role" not in model._model.prompts[-1]
+    assert model._model.prompts[-1].endswith("<|im_start|>assistant\n")
+
+
 def test_no_history_option_and_limits():
     model = make_model()
     assert model.chat("X", max_tokens=1, save_history=False) == "İyiyim!"

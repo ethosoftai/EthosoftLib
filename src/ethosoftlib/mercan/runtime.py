@@ -41,17 +41,20 @@ class MercanRuntime:
             raise MercanError("MercanRuntime has been closed")
 
     def load_model(
-        self, path: str | os.PathLike[str], *, gpu_layers: int = 0,
-        use_mmap: bool = True, check_tensors: bool = False,
+        self, path: str | os.PathLike[str], *, gpu_layers: int | None = None,
+        use_mmap: bool | None = None, check_tensors: bool | None = None,
     ) -> MercanModel:
         self._check()
         model_path = Path(path).expanduser()
         if not model_path.is_file():
             raise FileNotFoundError(f"Mercan model not found: {model_path}")
         p = self._lib.mercan_model_default_params()
-        p.n_gpu_layers = gpu_layers
-        p.use_mmap = use_mmap
-        p.check_tensors = check_tensors
+        if gpu_layers is not None:
+            p.n_gpu_layers = gpu_layers
+        if use_mmap is not None:
+            p.use_mmap = use_mmap
+        if check_tensors is not None:
+            p.check_tensors = check_tensors
         handle = self._lib.mercan_model_load(os.fsencode(model_path), p)
         if not handle:
             raise native_error(self._lib, f"Could not load {model_path}")
@@ -212,6 +215,7 @@ class MercanModel:
     def context(
         self, *, n_ctx: int | None = None, n_batch: int | None = None,
         threads: int | None = None,
+        threads_batch: int | None = None,
     ) -> MercanContext:
         self._check()
         p = self._runtime._lib.mercan_context_default_params()
@@ -222,6 +226,8 @@ class MercanModel:
         if threads is not None:
             p.n_threads = threads
             p.n_threads_batch = threads
+        if threads_batch is not None:
+            p.n_threads_batch = threads_batch
         if not p.n_ctx or not p.n_batch:
             raise ValueError("n_ctx and n_batch must be positive")
         handle = self._runtime._lib.mercan_context_create(self._handle, p)

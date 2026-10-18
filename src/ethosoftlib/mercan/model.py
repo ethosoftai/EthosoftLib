@@ -1,7 +1,8 @@
 """High-level Mercan model wrapper. Importing it does not load native binaries."""
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import closing
 import asyncio
 import codecs
 from pathlib import Path
@@ -30,6 +31,9 @@ class Model:
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
         n_ctx: int | None = None, n_batch: int | None = None,
         threads: int | None = None,
+        threads_batch: int | None = None,
+        role_system: str = "sistem", role_user: str = "kullanici",
+        role_assistant: str = "asistan",
     ) -> None:
         self._runtime = runtime
         self._model = model
@@ -38,6 +42,11 @@ class Model:
         self._context_options = {
             "n_ctx": n_ctx, "n_batch": n_batch, "threads": threads,
         }
+        if threads_batch is not None:
+            self._context_options["threads_batch"] = threads_batch
+        self._role_options = dict(role_system=role_system, role_user=role_user,
+                                  role_assistant=role_assistant)
+        format_chat([{"role": "user", "content": ""}], **self._role_options)
         self._history: list[dict[str, str]] = []
         self._lock = RLock()
         self._closed = False
@@ -57,6 +66,11 @@ class Model:
         n_ctx: int | None = None,
         n_batch: int | None = None,
         threads: int | None = None,
+        threads_batch: int | None = None,
+        plugins: Sequence[str | os.PathLike[str]] = (),
+        use_mmap: bool = True, check_tensors: bool = False,
+        role_system: str = "sistem", role_user: str = "kullanici",
+        role_assistant: str = "asistan",
     ) -> Model:
         """Load an existing .mercan file or download it from Hugging Face.
 
@@ -84,15 +98,23 @@ class Model:
             local_files_only=local_files_only, token=token,
         )
         runtime = MercanRuntime(library_path=library_path)
+        model = None
         try:
-            model = runtime.load_model(path, gpu_layers=gpu_layers)
+            for plugin in plugins:
+                runtime.load_plugin(plugin)
+            model = runtime.load_model(path, gpu_layers=gpu_layers,
+                                       use_mmap=use_mmap, check_tensors=check_tensors)
+            return cls(
+                runtime, model, path, system_prompt=system_prompt,
+                n_ctx=n_ctx, n_batch=n_batch, threads=threads,
+                threads_batch=threads_batch, role_system=role_system,
+                role_user=role_user, role_assistant=role_assistant,
+            )
         except BaseException:
+            if model is not None:
+                model.close()
             runtime.close()
             raise
-        return cls(
-            runtime, model, path, system_prompt=system_prompt,
-            n_ctx=n_ctx, n_batch=n_batch, threads=threads,
-        )
 
     @property
     def history(self) -> tuple[dict[str, str], ...]:
@@ -147,7 +169,50 @@ class Model:
                 messages.append({"role": "system", "content": self.system_prompt})
             messages.extend(self._history)
             messages.append({"role": "user", "content": prompt})
-            formatted = format_chat(messages)
+            fragments = []
+            with closing(self.stream_generate(
+                messages, temperature=temperature, max_tokens=max_tokens,
+                top_k=top_k, top_p=top_p, repeat_penalty=repeat_penalty,
+                repeat_last_n=repeat_last_n, seed=seed, stop_event=_stop_event,
+            )) as stream:
+                for piece in stream:
+                    fragments.append(piece)
+                    yield piece
+            if save_history and not (_stop_event is not None and _stop_event.is_set()):
+                self._history.extend((
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": "".join(fragments)},
+                ))
+
+    def generate(self, messages: Sequence[Mapping[str, str]], **kwargs: object) -> str:
+        """Generate from caller-owned messages without reading or writing history.
+
+        No default system prompt is inserted. Supply the complete transcript.
+        Generation options are the same as stream_generate().
+        """
+        return "".join(self.stream_generate(messages, **kwargs))
+
+    def stream_generate(
+        self, messages: Sequence[Mapping[str, str]], *, temperature: float = 0.7,
+        max_tokens: int = 256, top_k: int = 40, top_p: float = 0.9,
+        repeat_penalty: float = 1.15, repeat_last_n: int = 64,
+        seed: int | None = None, stop_event: Event | None = None,
+    ) -> Iterator[str]:
+        """Yield UTF-8-safe fragments without changing chat history.
+
+        Set stop_event or close the iterator to stop generation. Cancellation
+        is cooperative between decode calls; an in-flight decode is completed.
+        """
+        self._validate_generation(
+            "messages", temperature=temperature, max_tokens=max_tokens,
+            top_k=top_k, top_p=top_p, repeat_penalty=repeat_penalty,
+            repeat_last_n=repeat_last_n,
+        )
+        formatted = format_chat(messages, **self._role_options)
+        with self._lock:
+            self._check()
+            if stop_event is not None and stop_event.is_set():
+                return
             prompt_tokens = self._model.tokenize(formatted, parse_special=True)
             if not prompt_tokens:
                 raise MercanError("Prompt produced no tokens")
@@ -159,8 +224,6 @@ class Model:
 
             rng = random.Random(seed)
             decoder = codecs.getincrementaldecoder("utf-8")("replace")
-            fragments: list[str] = []
-            completed = False
             with self._model.context(**self._context_options) as context:
                 if len(prompt_tokens) + max_tokens > context.size:
                     raise ValueError(
@@ -170,7 +233,7 @@ class Model:
                 context.decode(prompt_tokens)
                 recent = list(prompt_tokens[-repeat_last_n:]) if repeat_last_n else []
                 for index in range(max_tokens):
-                    if _stop_event is not None and _stop_event.is_set():
+                    if stop_event is not None and stop_event.is_set():
                         return
                     next_token = context.sample_token(
                         temperature=temperature, top_k=top_k, top_p=top_p,
@@ -180,7 +243,6 @@ class Model:
                         break
                     piece = decoder.decode(self._model.token_to_bytes(next_token))
                     if piece:
-                        fragments.append(piece)
                         yield piece
                     if repeat_last_n:
                         recent.append(next_token)
@@ -190,14 +252,7 @@ class Model:
                         context.decode([next_token])
                 tail = decoder.decode(b"", final=True)
                 if tail:
-                    fragments.append(tail)
                     yield tail
-                completed = True
-            if completed and save_history:
-                self._history.extend((
-                    {"role": "user", "content": prompt},
-                    {"role": "assistant", "content": "".join(fragments)},
-                ))
 
     def chat(
         self, prompt: str, *, temperature: float = 0.7,

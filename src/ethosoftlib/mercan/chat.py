@@ -17,12 +17,22 @@ DEFAULT_SYSTEM_PROMPT = (
 ROLE_NAMES = {"system": "sistem", "user": "kullanici", "assistant": "asistan"}
 
 
-def format_chat(messages: Sequence[Mapping[str, str]]) -> str:
+def format_chat(
+    messages: Sequence[Mapping[str, str]], *, role_system: str = "sistem",
+    role_user: str = "kullanici", role_assistant: str = "asistan",
+) -> str:
     """Render turns using the same structural control tokens as Mercan CLI.
 
     The caller supplies trusted role names; contents are escaped to avoid
     accidentally treating literal user text as ChatML delimiters.
     """
+    if not messages:
+        raise ValueError("At least one message is required")
+    roles = dict(zip(ROLE_NAMES, (role_system, role_user, role_assistant)))
+    if any(not isinstance(name, str) or not name.strip()
+           or any(marker in name for marker in ("\n", "\r", "<|", "|>"))
+           for name in roles.values()):
+        raise ValueError("Chat role names must be non-empty single-line headers")
     out: list[str] = []
     for message in messages:
         role = message.get("role")
@@ -30,6 +40,6 @@ def format_chat(messages: Sequence[Mapping[str, str]]) -> str:
         if role not in ROLE_NAMES or not isinstance(content, str):
             raise ValueError("Messages must contain a known role and string content")
         safe_content = content.replace("<|", "<​|")
-        out.append(f"<|im_start|>{ROLE_NAMES[role]}\n{safe_content}<|im_end|>\n")
-    out.append("<|im_start|>asistan\n")
+        out.append(f"<|im_start|>{roles[role]}\n{safe_content}<|im_end|>\n")
+    out.append(f"<|im_start|>{role_assistant}\n")
     return "".join(out)

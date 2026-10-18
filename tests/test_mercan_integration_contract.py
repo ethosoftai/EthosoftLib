@@ -18,6 +18,7 @@ def test_real_mercan_model_chat():
         library_path=os.environ["ETHOSOFT_MERCAN_LIBRARY"],
         device="cpu",
         n_ctx=4096,
+        threads=2,
     ) as model:
         response = model.chat(
             "Merhaba, nasılsın?", temperature=0.7,
@@ -44,6 +45,7 @@ def test_real_native_stream_info_and_kv_reset():
         library_path=os.environ["ETHOSOFT_MERCAN_LIBRARY"],
         device="cpu",
         n_ctx=4096,
+        threads=2,
     ) as model:
         prompt = "Merhaba, nasılsın?"
         kwargs = dict(max_tokens=16, seed=42, temperature=0.7, save_history=False)
@@ -51,6 +53,13 @@ def test_real_native_stream_info_and_kv_reset():
         received = "".join(model.stream_chat(prompt, **kwargs))
         assert received == expected
         assert received.strip()
+        assert model.history == ()
+        messages = [{"role": "system", "content": "Türkçe kısa cevap ver."},
+                    {"role": "user", "content": prompt}]
+        stateless = model.generate(messages, max_tokens=8, temperature=0)
+        assert stateless.strip()
+        assert "".join(model.stream_generate(messages, max_tokens=8,
+                                              temperature=0)) == stateless
         assert model.history == ()
         info = model.info()
         assert info["architecture"] == "nedolm"
