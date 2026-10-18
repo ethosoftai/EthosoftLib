@@ -106,3 +106,15 @@ providers.register(
     "agent", "sop", "ethosoftlib.sop:AgentPipeline",
     description="Separation of Powers agent pipeline (Yasama/Yurutme/Yargi)",
 )
+
+# Keyless web search, page reading and downloads (stdlib only).
+providers.register(
+    "search", "web", "ethosoftlib.web:WebClient",
+    description="Web search (DuckDuckGo or SearXNG), page text and downloads",
+)
+
+# Local retrieval: BM25 (Turkish-aware), optionally hybrid with an embedder.
+providers.register(
+    "retrieval", "rag", "ethosoftlib.rag:Index",
+    description="BM25 retrieval over local text with optional embedding fusion",
+)

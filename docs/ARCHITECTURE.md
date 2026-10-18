@@ -11,6 +11,8 @@ ethosoftlib
 ├── core/            domain-neutral provider registry and errors
 ├── mercan/          optional MercanRuntime C-ABI binding
 ├── sop/             Yasama/Yurutme/Yargi agent pipeline (pure Python)
+├── web/             keyless web search, page text and downloads (stdlib)
+├── rag/             BM25 retrieval over local text, optional embeddings
 └── <future>/        independent services, frameworks or products
 ```
 

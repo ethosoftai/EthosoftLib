@@ -88,6 +88,37 @@ from ethosoftlib.sop.runtime import LibMercanBackend, OllamaBackend
 
 See [SOP CLI](docs/sop/CLI.md) and [SOP runtime](docs/sop/RUNTIME.md).
 
+## Web search and pages (`ethosoftlib.web`)
+
+Keyless web search, readable page text and downloads using only the standard
+library. DuckDuckGo is the default; set `ETHOSOFT_SEARXNG_URL` to use SearXNG.
+Hosts on loopback/private networks are refused unless `allow_private=True`.
+
+```python
+from ethosoftlib import web
+
+for hit in web.search("Ankara hava durumu", max_results=3):
+    print(hit.title, hit.url, hit.snippet)
+page = web.open_url("https://tr.wikipedia.org/wiki/Ankara", max_chars=4000)
+web.download("https://example.com/rapor.pdf", "indirilenler/")
+```
+
+## Local retrieval (`ethosoftlib.rag`)
+
+BM25 search over local text with Turkish-aware terms (Turkish casing,
+apostrophe suffixes, five-letter prefix stemming). Every hit carries its file
+and starting line. No dependencies; pass an `embedder` for hybrid search.
+
+```python
+from ethosoftlib.rag import Index
+
+index = Index()
+index.add_directory("docs", pattern="*.md")
+for hit in index.search("Mercan modeli nasıl indirilir?", k=3):
+    print(hit.source, hit.line, hit.score, hit.text[:80])
+index.save("docs.index.json")
+```
+
 ## Math tool-use (`ethosoftlib.math`)
 
 Verified math tool-use toolkit: text -> `<arac_cagrisi>bol(48, 2)</arac_cagrisi><arac_sonucu>24</arac_sonucu>`,
