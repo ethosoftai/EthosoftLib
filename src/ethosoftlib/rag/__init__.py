@@ -12,8 +12,12 @@ a file and a starting line. Turkish is agglutinative ("Ankara'nın",
 lower-casing: a simple prefix stemmer that works well for Turkish retrieval
 and harmlessly for English. Pass ``prefix_len=None`` to keep whole words.
 
-An ``embedder`` (any object with ``embed(texts) -> list[vector]``) turns the
-index hybrid: BM25 and cosine rankings are merged with reciprocal rank fusion.
+An ``embedder`` (any object with ``embed(texts) -> list[vector]``) adds
+semantic recall: BM25 hits keep their order and come first, and chunks BM25
+cannot reach (no shared term) follow in cosine order. Rank fusion was measured
+and rejected: on Turkish XQuAD (240 paragraphs, 1190 questions) BM25 alone finds
+the right paragraph first for 91.5% of questions, Mercan-0.8B mean-pooled
+embeddings alone for 48.0%, and even a 0.1-weighted fusion drops BM25 to 85.6%.
 """
 from __future__ import annotations
 
@@ -35,7 +39,6 @@ FORMAT_VERSION = 1
 SKIP_DIRS = frozenset({".git", ".hg", ".svn", ".venv", "venv", "__pycache__",
                        "node_modules", ".mypy_cache", ".pytest_cache", "build", "dist"})
 MAX_FILE_BYTES = 2 * 1024 * 1024
-RRF_K = 60
 
 _APOSTROPHE_SUFFIX = re.compile(r"['’]\w*")
 _WORD = re.compile(r"[^\W_]+")
@@ -129,7 +132,7 @@ def _is_binary(path: Path) -> bool:
 
 
 class Index:
-    """In-memory BM25 index of text chunks, optionally hybrid with embeddings."""
+    """In-memory BM25 index of text chunks; an embedder fills in semantic matches."""
 
     def __init__(self, *, embedder: Embedder | None = None, chunk_words: int = 120,
                  overlap_words: int = 30, prefix_len: int | None = 5,
@@ -234,17 +237,16 @@ class Index:
         return sorted(scores, key=lambda item: (-item[1], item[0]))
 
     def search(self, query: str, k: int = 5) -> list[Hit]:
-        """Best ``k`` chunks for ``query``; empty when nothing matches."""
+        """Best ``k`` chunks: BM25 hits first, then (with an embedder) the
+        closest chunks sharing no term with the query. Scores of the two parts
+        are not comparable: BM25 scores, then cosine similarities."""
         if k < 1 or not self.chunks:
             return []
-        ranked = self._bm25(query)
-        if self.embedder is not None and self._vectors:
-            dense = self._dense(query)[: max(k * 4, 20)]
-            fused: dict[int, float] = {}
-            for ranking in (ranked[: max(k * 4, 20)], dense):
-                for rank, (doc, _) in enumerate(ranking):
-                    fused[doc] = fused.get(doc, 0.0) + 1.0 / (RRF_K + rank + 1)
-            ranked = sorted(fused.items(), key=lambda item: (-item[1], item[0]))
+        ranked = self._bm25(query)[:k]
+        if self.embedder is not None and self._vectors and len(ranked) < k:
+            lexical = {doc for doc, _ in ranked}
+            ranked += [(doc, score) for doc, score in self._dense(query)
+                       if doc not in lexical][: k - len(ranked)]
         return [
             Hit(self.chunks[doc].text, self.chunks[doc].source, self.chunks[doc].line,
                 round(score, 6), dict(self.chunks[doc].metadata))

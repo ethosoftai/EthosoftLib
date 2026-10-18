@@ -102,6 +102,16 @@ def test_hybrid_search_finds_semantic_matches_bm25_misses():
     assert embedder.batches[0] == ["Meclis ve hükümet bu şehirde toplanır."]
 
 
+def test_lexical_hits_stay_ahead_of_semantic_matches():
+    index = Index(embedder=_ConceptEmbedder(), chunk_words=10)
+    index.add("Meclis ve hükümet bu şehirde toplanır.", "ankara.txt")
+    index.add("Başkent kelimesi bu notta geçiyor ama konu deniz.", "not.txt")
+    index.add("Liman ve kıyı şeridi çok uzundur.", "izmir.txt")
+    hits = index.search("başkent", k=3)
+    assert [hit.source for hit in hits] == ["not.txt", "ankara.txt", "izmir.txt"]
+    assert [hit.source for hit in index.search("başkent", k=1)] == ["not.txt"]
+
+
 def test_embedder_vector_count_is_checked():
     class Broken:
         def embed(self, texts):

@@ -16,7 +16,7 @@ from threading import RLock
 from .chat import DEFAULT_SYSTEM_PROMPT, format_chat
 from .hub import resolve_model_file
 from .native import MercanError
-from .runtime import MercanRuntime, MercanModel
+from .runtime import MercanEmbedder, MercanRuntime, MercanModel
 
 
 class Model:
@@ -58,6 +58,7 @@ class Model:
         self._native_session = None
         self._owner = None
         self._sessions: set[ChatSession] = set()
+        self._embedders: dict[str, MercanEmbedder] = {}
         self._generating = False
         self._closed = False
 
@@ -347,6 +348,36 @@ class Model:
             stop.set()
             await asyncio.shield(task)
 
+    def embed(
+        self, texts: str | Sequence[str], *, pooling: str = "mean",
+        normalize: bool = True,
+    ) -> list[float] | list[list[float]]:
+        """Pooled final-layer embeddings: one vector for a string, a list of
+        vectors for a sequence. Unit length unless ``normalize=False``.
+
+        A Model is therefore usable as ``ethosoftlib.rag.Index(embedder=model)``.
+        The native context is created on first use and reused; texts beyond
+        512 tokens are truncated.
+        """
+        single = isinstance(texts, str)
+        items = [texts] if single else list(texts)
+        owner = self._owner or self
+        with self._inference_lock, owner._lock:
+            self._check()
+            embedder = owner._embedders.get(pooling)
+            if embedder is None:
+                threads = self._context_options.get("threads")
+                embedder = self._model.embedder(pooling=pooling, threads=threads)
+                owner._embedders[pooling] = embedder
+            vectors = [embedder.embed(text) for text in items]
+        if normalize:
+            for vector in vectors:
+                norm = math.sqrt(sum(value * value for value in vector))
+                if not norm:
+                    raise MercanError("Mercan returned a zero embedding")
+                vector[:] = [value / norm for value in vector]
+        return vectors[0] if single else vectors
+
     def info(self) -> dict[str, object]:
         """Snapshot of metadata already exposed by the native public API."""
         with self._lock:
@@ -420,6 +451,9 @@ class Model:
                 self._native_session.close()
                 self._native_session = None
             if self._owner is None:
+                for embedder in self._embedders.values():
+                    embedder.close()
+                self._embedders.clear()
                 self._model.close()
                 self._runtime.close()
             else:

@@ -8,7 +8,10 @@ from pathlib import Path
 from threading import RLock
 from typing import Sequence
 
-from .native import bind_api, bind_device_api, bind_generation_api, bind_session_api, load_library, native_error, MercanError
+from .native import (
+    POOLING, bind_api, bind_device_api, bind_embedding_api, bind_generation_api,
+    bind_session_api, load_library, native_error, MercanError,
+)
 
 # Mercan's native backend uses process-global initialization.
 _BACKEND_LOCK = RLock()
@@ -49,6 +52,10 @@ class MercanRuntime:
     def require_session_api(self) -> None:
         self._check()
         bind_session_api(self._lib)
+
+    def require_embedding_api(self) -> None:
+        self._check()
+        bind_embedding_api(self._lib)
 
     def capabilities(self) -> dict[str, object]:
         """Discover backends compiled into this library and usable devices."""
@@ -324,6 +331,21 @@ class MercanModel:
         self._contexts += 1
         return MercanContext(self, handle, int(p.n_batch), p)
 
+    def embedder(
+        self, *, pooling: str = "mean", n_ctx: int = 512,
+        threads: int | None = None,
+    ) -> MercanEmbedder:
+        """Own a native embedding context; texts beyond n_ctx tokens are truncated."""
+        if pooling not in POOLING:
+            raise ValueError(f"pooling must be one of {sorted(POOLING)}")
+        self._runtime.require_embedding_api()
+        p = self._context_params(n_ctx=n_ctx, threads=threads)
+        handle = self._runtime._lib.mercan_embedder_create_v1(self._handle, p, POOLING[pooling])
+        if not handle:
+            raise native_error(self._runtime._lib, "Could not create Mercan embedder")
+        self._contexts += 1
+        return MercanEmbedder(self, handle, pooling)
+
     def chat_session(self, *, context_options=None):
         """Own a persistent native context; close it before freeing this model."""
         from .generation import NativeChatSession
@@ -450,6 +472,46 @@ class MercanContext:
             self._model._contexts -= 1
 
     def __enter__(self) -> MercanContext:
+        self._check()
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        self.close()
+
+
+class MercanEmbedder:
+    """One native embedding context. Calls on a handle are serialized natively."""
+
+    def __init__(self, model: MercanModel, handle: int, pooling: str) -> None:
+        self._model = model
+        self._handle = handle
+        self.pooling = pooling
+        self.size = int(model._runtime._lib.mercan_embedder_size_v1(handle))
+
+    def _check(self) -> None:
+        self._model._check()
+        if not self._handle:
+            raise MercanError("MercanEmbedder has been closed")
+
+    def embed(self, text: str) -> list[float]:
+        """Raw pooled vector (not normalized) for one non-empty text."""
+        self._check()
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("text must be a non-empty string")
+        raw = text.encode("utf-8")
+        out = (C.c_float * self.size)()
+        written = self._model._runtime._lib.mercan_embed_v1(self._handle, raw, len(raw), out, self.size)
+        if written != self.size:
+            raise native_error(self._model._runtime._lib, "Mercan embedding failed")
+        return list(out)
+
+    def close(self) -> None:
+        if self._handle:
+            self._model._runtime._lib.mercan_embedder_free_v1(self._handle)
+            self._handle = None
+            self._model._contexts -= 1
+
+    def __enter__(self) -> MercanEmbedder:
         self._check()
         return self
 

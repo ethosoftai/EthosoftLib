@@ -147,6 +147,30 @@ Historical runtime 0.1.2 builds without queries are still supported, but their
 struct layout cannot be checked automatically. Other unversioned builds fail
 with an actionable compatibility error.
 
+### Embeddings and retrieval
+
+`model.embed()` returns unit-length vectors pooled from the final hidden states
+(MercanRuntime embedding API v1). It needs a libmercan built with
+`mercan_embed_v1`; older libraries raise a clear `MercanError`.
+
+```python
+from ethosoftlib.mercan import Model
+from ethosoftlib.rag import Index
+
+with Model.from_pretrained("MercanAI/Mercan-0.8B-SFT") as model:
+    vector = model.embed("Ankara Türkiye'nin başkentidir.")      # list[float]
+    vectors = model.embed(["birinci metin", "ikinci metin"])      # list[list[float]]
+    index = Index(embedder=model)
+    index.add_directory("notlar", pattern="*.md")
+    hits = index.search("başkent neresi?", k=5)
+```
+
+`pooling="mean"` (default) or `"last"`. The native context is created on first
+use and reused; texts beyond 512 tokens are truncated. Mercan is not trained as
+an embedding model: on Turkish XQuAD it finds the right paragraph first for 48%
+of questions, BM25 for 91.5%. `rag.Index` therefore keeps BM25 hits first and
+uses Mercan only for chunks that share no term with the query.
+
 ## Build Linux native library / wheel
 
 ```bash

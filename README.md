@@ -119,6 +119,10 @@ for hit in index.search("Mercan modeli nasıl indirilir?", k=3):
 index.save("docs.index.json")
 ```
 
+With a Mercan model, `Index(embedder=model)` also finds chunks that share no
+word with the query; BM25 hits still come first (see
+[Mercan Python guide](docs/MERCAN_PYTHON.md#embeddings-and-retrieval)).
+
 ## Math tool-use (`ethosoftlib.math`)
 
 Verified math tool-use toolkit: text -> `<arac_cagrisi>bol(48, 2)</arac_cagrisi><arac_sonucu>24</arac_sonucu>`,
