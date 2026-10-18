@@ -123,6 +123,23 @@ With a Mercan model, `Index(embedder=model)` also finds chunks that share no
 word with the query; BM25 hits still come first (see
 [Mercan Python guide](docs/MERCAN_PYTHON.md#embeddings-and-retrieval)).
 
+## Documents and OCR (`ethosoftlib.ocr`)
+
+Reads PDF text layers exactly, page by page, and reports scanned pages instead
+of returning them empty. `render_page` produces the PNG an OCR model will take;
+no OCR model ships yet. Needs Poppler (`apt install poppler-utils`).
+
+```python
+from ethosoftlib import ocr
+
+doc = ocr.read("rapor.pdf", allow_missing=True)
+print(doc.text, doc.needs_ocr)        # needs_ocr: scanned page numbers
+png = ocr.render_page("rapor.pdf", 2, dpi=300)
+```
+
+`rag.Index.add_file` and `add_directory` index PDF text layers too; hits carry
+`metadata["page"]`.
+
 ## Math tool-use (`ethosoftlib.math`)
 
 Verified math tool-use toolkit: text -> `<arac_cagrisi>bol(48, 2)</arac_cagrisi><arac_sonucu>24</arac_sonucu>`,

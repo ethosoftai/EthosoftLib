@@ -118,3 +118,9 @@ providers.register(
     "retrieval", "rag", "ethosoftlib.rag:Index",
     description="BM25 retrieval over local text with optional embedding fusion",
 )
+
+# Document text: PDF text layers now (Poppler); OCR engines plug in later.
+providers.register(
+    "document", "ocr", "ethosoftlib.ocr:read",
+    description="PDF text extraction with scanned-page detection; OCR engine pending",
+)

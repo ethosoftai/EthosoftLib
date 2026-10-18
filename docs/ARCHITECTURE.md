@@ -13,6 +13,7 @@ ethosoftlib
 ├── sop/             Yasama/Yurutme/Yargi agent pipeline (pure Python)
 ├── web/             keyless web search, page text and downloads (stdlib)
 ├── rag/             BM25 retrieval over local text, optional embeddings
+├── ocr/             PDF text layers and page images; OCR engines plug in later
 └── <future>/        independent services, frameworks or products
 ```
 

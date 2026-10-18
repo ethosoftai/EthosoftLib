@@ -180,18 +180,34 @@ class Index:
         )
 
     def add_file(self, path: str | os.PathLike[str], *, source: str | None = None) -> int:
+        """Index a text file, or the text layer of a PDF page by page (hits
+        carry ``metadata["page"]``; scanned pages are skipped until OCR exists)."""
         file = Path(path)
         if not file.is_file():
             raise RagError(f"Not a file: {file}")
+        source = source if source is not None else str(file)
+        if file.suffix.lower() == ".pdf":
+            return self._add_pdf(file, source)
         if file.stat().st_size > MAX_FILE_BYTES or _is_binary(file):
             return 0
         text = file.read_text(encoding="utf-8", errors="replace")
-        return self.add(text, source if source is not None else str(file))
+        return self.add(text, source)
+
+    def _add_pdf(self, file: Path, source: str) -> int:
+        from .. import ocr
+
+        try:
+            document = ocr.read(file, allow_missing=True)
+        except ocr.OcrError as exc:
+            raise RagError(f"Could not read {file}: {exc}") from exc
+        return sum(self.add(page.text, source, metadata={"page": page.number})
+                   for page in document.pages if page.text)
 
     def add_directory(self, path: str | os.PathLike[str] = ".", *, pattern: str = "*",
                       recursive: bool = True, relative_to: str | os.PathLike[str] | None = None) -> int:
-        """Index text files matching ``pattern``; binary, huge and tool
-        directories (.git, .venv, node_modules, ...) are skipped."""
+        """Index text files and PDF text layers matching ``pattern``; binary,
+        huge and tool directories (.git, .venv, node_modules, ...) are skipped,
+        as are PDFs that cannot be read."""
         root = Path(path)
         if not root.is_dir():
             raise RagError(f"Not a directory: {root}")
@@ -206,7 +222,11 @@ class Index:
                         source = str(file.relative_to(base))
                     except ValueError:
                         source = str(file)
-                    added += self.add_file(file, source=source)
+                    try:
+                        added += self.add_file(file, source=source)
+                    except RagError:
+                        if file.suffix.lower() != ".pdf":
+                            raise
             if not recursive:
                 break
         return added
