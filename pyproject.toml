@@ -44,6 +44,7 @@ include = ["ethosoftlib*"]
 [tool.setuptools.package-data]
 "ethosoftlib.mercan" = ["lib/*.so", "lib/*.dylib", "lib/*.dll"]
 "ethosoftlib.nedo" = ["lib/*.so", "lib/*.dylib", "lib/*.dll", "lib/*.txt"]
+"ethosoftlib.sop.runtime" = ["tool_registry.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
